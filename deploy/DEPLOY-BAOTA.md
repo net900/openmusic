@@ -1,29 +1,26 @@
 # 宝塔面板部署指南
 
-## 一、本地打包
+## 一、本地构建
 
 在项目根目录执行：
 
 ```bash
 npm run install:all   # 首次需要
-npm run package:baota
+npm run build         # 构建前端 → client/dist
 ```
 
-生成文件：
+需要上传的文件/目录：
 
-- `release/openmusic/` — 部署目录
-- `release/openmusic-baota.zip` — 可直接上传宝塔的压缩包
-
-压缩包内含：后端代码、`client/dist` 前端静态文件、PM2 与 Nginx 配置示例。
+- `server/` — 后端代码（不含 `node_modules`、`.env`）
+- `client/dist/` — 前端静态文件
+- `deploy/` — PM2 与 Nginx 配置示例
 
 ---
 
 ## 二、上传到服务器
 
 1. 宝塔 → **文件** → 上传到例如 `/www/wwwroot/openmusic`
-2. 解压 `openmusic-baota.zip`
-
-目录结构应为：
+2. 确保目录结构如下：
 
 ```
 /www/wwwroot/openmusic/
@@ -132,7 +129,7 @@ pm2 startup   # 按提示设置开机自启
 
 ## 更新部署
 
-本地重新 `npm run package:baota`，上传覆盖 `server/` 和 `client/dist/`，然后：
+本地重新 `npm run build`，上传覆盖 `server/` 和 `client/dist/`，然后：
 
 ```bash
 cd /www/wwwroot/openmusic/server

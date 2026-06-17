@@ -5,3 +5,7 @@ dist/
 .DS_Store
 release/
 server/.env
+
+# 本地打包（不上传）
+scripts/package-build.mjs
+.github/workflows/release.yml

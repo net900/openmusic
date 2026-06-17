@@ -54,10 +54,11 @@ npm start              # 默认 http://服务器IP:4000
 ### 方式二：宝塔 / PM2
 
 ```bash
-npm run package:baota  # 生成 release/openmusic-baota.zip
+npm run install:all
+npm run build          # 构建前端 → client/dist
 ```
 
-详细步骤见 [deploy/DEPLOY-BAOTA.md](deploy/DEPLOY-BAOTA.md)。
+将 `server/`、`client/dist/`、`deploy/` 上传到服务器，详细步骤见 [deploy/DEPLOY-BAOTA.md](deploy/DEPLOY-BAOTA.md)。
 
 ### Nginx 反向代理
 
