@@ -145,27 +145,32 @@ export default function PlayerPage({ onClose }: Props) {
 
   return (
 
-    <div className="fixed inset-0 z-50 flex flex-col animate-fade-in">
+    <div className="fixed inset-0 z-[60] flex flex-col animate-fade-in overflow-hidden isolate">
+
+      {/* 不透底层，完全挡住点歌页 */}
+      <div className="absolute inset-0 bg-[#0d0d0d]" aria-hidden />
 
       <div
-
-        className="absolute inset-0 bg-cover bg-center transition-all duration-1000 scale-110"
-
+        className="absolute inset-0 bg-cover bg-center scale-110 opacity-30"
         style={{
-
           backgroundImage: bgLoaded ? `url(${coverUrl})` : undefined,
-
-          filter: 'blur(60px) brightness(0.35)',
-
+          filter: 'blur(48px) saturate(1.15)',
         }}
-
+        aria-hidden
       />
 
       <img src={coverUrl} alt="" className="hidden" onLoad={() => setBgLoaded(true)} />
 
-      <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/20 to-black/70" />
+      {/* 全屏毛玻璃 */}
+      <div
+        className="absolute inset-0 bg-[#141414]/90 backdrop-blur-[40px] [-webkit-backdrop-filter:blur(40px)]"
+        aria-hidden
+      />
 
-
+      <div
+        className="absolute inset-0 bg-gradient-to-b from-white/[0.05] via-transparent to-black/50 pointer-events-none"
+        aria-hidden
+      />
 
       <header className="relative z-10 flex items-center px-3 py-2 sm:px-4 sm:py-3 2xl:px-8 2xl:py-6 flex-shrink-0">
 
