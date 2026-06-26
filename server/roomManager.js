@@ -1504,12 +1504,15 @@ export function seekTo(roomId, socketId, time, connectionId = null) {
 }
 
 async function applyJumpToFront(room, queueId, options = {}) {
-  const { ownerPriority = false } = options;
+  const { ownerPriority = false, priorityBy = '' } = options;
   const qIdx = room.queue.findIndex((s) => s.queueId === queueId);
   if (qIdx === -1) return false;
 
   const [song] = room.queue.splice(qIdx, 1);
-  if (ownerPriority) song.ownerPriority = Date.now();
+  if (ownerPriority) {
+    song.ownerPriority = Date.now();
+    song.priorityBy = priorityBy || '管理员';
+  }
   room.queue.unshift(song);
   if (!room.current) {
     await withPlaybackLock(room, async () => {
@@ -1532,7 +1535,10 @@ export async function requestJump(roomId, socketId, queueId) {
   const isRequester = isQueueRequester(item, socketId, user);
   if (!isController && !isRequester) return { error: '只能为自己点的歌插队' };
 
-  const jumped = await applyJumpToFront(room, queueId, { ownerPriority: isController });
+  const jumped = await applyJumpToFront(room, queueId, {
+    ownerPriority: isController,
+    priorityBy: isController ? user.nickname : '',
+  });
   if (!jumped) return { error: '歌曲不在队列中' };
 
   room.jumpRequests = room.jumpRequests.filter((r) => r.queueId !== queueId);
@@ -1551,7 +1557,11 @@ export async function approveJump(roomId, socketId, requestId, connectionId = nu
   const req = room.jumpRequests[reqIdx];
   room.jumpRequests.splice(reqIdx, 1);
 
-  await applyJumpToFront(room, req.queueId, { ownerPriority: true });
+  const approver = room.users.get(socketId);
+  await applyJumpToFront(room, req.queueId, {
+    ownerPriority: true,
+    priorityBy: approver?.nickname || '管理员',
+  });
 
   persistRoom(room);
   return { room: serializeRoom(room) };
@@ -1824,6 +1834,7 @@ function serializeQueueItemForRoom(item) {
     addedAt: item.addedAt,
     likedByIds: Array.isArray(item.likedByIds) ? item.likedByIds : [],
     ownerPriority: item.ownerPriority || 0,
+    priorityBy: item.priorityBy || '',
   };
 }
 

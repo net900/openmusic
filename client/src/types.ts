@@ -26,6 +26,8 @@ export interface QueueItem extends Song {
   addedAt: number;
   likedByIds?: string[];
   ownerPriority?: number;
+  /** 管理员插队置顶的操作者昵称 */
+  priorityBy?: string;
 }
 
 export interface SongHistoryItem extends Song {

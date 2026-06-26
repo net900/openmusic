@@ -112,7 +112,7 @@ export default function QueuePanel({ fillHeight = false }: Props) {
                 song.isCurrent
                   ? 'bg-netease-red/10 border border-netease-red/25'
                   : song.ownerPriority
-                    ? 'bg-amber-400/10 border border-amber-400/20 hover:bg-amber-400/15'
+                    ? 'bg-sky-400/10 border border-sky-400/20 hover:bg-sky-400/15'
                     : 'bg-netease-card/35 hover:bg-netease-card/80'
               }`}
               style={{ minHeight: ROW_HEIGHT }}
@@ -152,7 +152,11 @@ export default function QueuePanel({ fillHeight = false }: Props) {
                     </Tooltip>
                   )}
                   {Boolean(song.ownerPriority) && (
-                    <span className="rounded-full bg-amber-400/15 px-1.5 py-0 text-[9px] leading-4 text-amber-300">房主</span>
+                    <TruncateTip
+                      text={song.priorityBy || '管理员'}
+                      as="span"
+                      className="flex-shrink-0 max-w-[4.5rem] rounded-full bg-sky-400/15 px-1.5 py-0 text-[9px] leading-4 text-sky-300 truncate"
+                    />
                   )}
                   <SourceBadge
                     source={song.source || 'netease'}
