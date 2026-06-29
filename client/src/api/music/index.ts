@@ -67,9 +67,12 @@ export async function getSongById(source: MusicSource, id: string): Promise<Sear
   return getProvider(source).getSongById(id);
 }
 
-export async function getSongUrl(song: Pick<Song, 'id' | 'source' | 'url'>): Promise<string> {
+export async function getSongUrl(
+  song: Pick<Song, 'id' | 'source' | 'url'>,
+  qualityOverride?: string,
+): Promise<string> {
   const source = song.source || 'netease';
-  const quality = getRoomPlaybackQuality(source);
+  const quality = qualityOverride ?? getRoomPlaybackQuality(source);
   const url = await getProvider(source).getSongUrl({ ...song, source }, quality);
   return toSecureMediaUrl(url);
 }
@@ -80,6 +83,9 @@ export {
   DEFAULT_ROOM_AUDIO_QUALITY,
   NETEASE_QUALITY_OPTIONS,
   TENCENT_QUALITY_OPTIONS,
+  getDowngradedQuality,
+  buildQualityFallbackChain,
+  getQualityOptionsForSource,
 } from './quality';
 export type { NeteaseQuality, TencentQuality } from './quality';
 export type { RoomAudioQuality } from '../../types';

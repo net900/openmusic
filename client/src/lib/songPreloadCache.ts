@@ -1,6 +1,12 @@
 import { getSongUrl, getTrackKey } from '../api/music';
-import { getRoomPlaybackQuality } from '../api/music/quality';
-import type { QueueItem } from '../types';
+import {
+  buildQualityFallbackChain,
+  getDowngradedQuality,
+  getLowestQuality,
+  getRoomPlaybackQuality,
+} from '../api/music/quality';
+import { useRoomStore } from '../stores/roomStore';
+import type { MusicSource, QueueItem } from '../types';
 import { isMobileDevice } from './audioUnlock';
 
 const MAX_URL_CACHE = 24;
@@ -11,6 +17,8 @@ const urlCache = loadUrlCacheFromStorage();
 const pendingFetches = new Map<string, Promise<string | null>>();
 const sourceErrorKeys = new Set<string>();
 const sourceErrorListeners = new Set<() => void>();
+/** 本机临时降档（不影响房间音质设置） */
+const localQualityOverrides = new Map<string, string>();
 
 function notifySourceErrors() {
   sourceErrorListeners.forEach((listener) => listener());
@@ -40,6 +48,14 @@ function clearTrackSourceError(song: Pick<QueueItem, 'queueId' | 'id' | 'source'
   notifySourceErrors();
 }
 
+function clearLocalQualityOverride(song: Pick<QueueItem, 'queueId' | 'id' | 'source'>) {
+  localQualityOverrides.delete(trackKeyOf(song));
+}
+
+function setLocalQualityOverride(song: Pick<QueueItem, 'queueId' | 'id' | 'source'>, quality: string) {
+  localQualityOverrides.set(trackKeyOf(song), quality);
+}
+
 /** 移除已不在播放列表中的源错误标记，避免 Set 无限增长 */
 export function pruneSourceErrors(activeSongs: Array<Pick<QueueItem, 'queueId' | 'id' | 'source'>>) {
   const activeKeys = new Set(activeSongs.map(trackKeyOf));
@@ -48,6 +64,11 @@ export function pruneSourceErrors(activeSongs: Array<Pick<QueueItem, 'queueId' |
     if (!activeKeys.has(key)) {
       sourceErrorKeys.delete(key);
       changed = true;
+    }
+  }
+  for (const key of localQualityOverrides.keys()) {
+    if (!activeKeys.has(key)) {
+      localQualityOverrides.delete(key);
     }
   }
   if (changed) notifySourceErrors();
@@ -77,15 +98,65 @@ function trackKeyOf(song: Pick<QueueItem, 'queueId' | 'id' | 'source'>) {
   return getTrackKey(song);
 }
 
-function urlCacheKey(song: Pick<QueueItem, 'queueId' | 'id' | 'source'>) {
-  const source = song.source || 'netease';
-  const quality = getRoomPlaybackQuality(source);
-  return `${trackKeyOf(song)}:${quality || 'default'}`;
+function songSourceOf(song: Pick<QueueItem, 'source'>): MusicSource {
+  return song.source || 'netease';
+}
+
+function getEffectivePlaybackQuality(song: Pick<QueueItem, 'queueId' | 'id' | 'source'>): string | undefined {
+  const source = songSourceOf(song);
+  return localQualityOverrides.get(trackKeyOf(song)) ?? getRoomPlaybackQuality(source);
+}
+
+function urlCacheKey(
+  song: Pick<QueueItem, 'queueId' | 'id' | 'source'>,
+  quality?: string,
+) {
+  const effective = quality ?? getEffectivePlaybackQuality(song);
+  return `${trackKeyOf(song)}:${effective || 'default'}`;
+}
+
+/**
+ * 房主（播放主控）已在播当前曲时，视为歌曲源可用，听众侧失败更可能是本机网络/高码率问题。
+ */
+export function isPlaybackLeaderAheadOnTrack(song: Pick<QueueItem, 'queueId' | 'id' | 'source'>): boolean {
+  const { room, isPlaybackLeader } = useRoomStore.getState();
+  if (isPlaybackLeader || !room?.current) return false;
+  return room.isPlaying && room.current.queueId === song.queueId;
+}
+
+/** 房主在播当前曲时逐级降档；房主也失败时仅尝试房间音质后直跳最低档 */
+function useGradualQualityFallback(song: Pick<QueueItem, 'queueId' | 'id' | 'source'>): boolean {
+  return isPlaybackLeaderAheadOnTrack(song);
+}
+
+function buildJumpQualityChain(
+  source: MusicSource,
+  startQuality: string,
+): string[] {
+  const lowest = getLowestQuality(source);
+  if (!lowest || lowest === startQuality) return [startQuality];
+  return [startQuality, lowest];
+}
+
+function buildFetchQualityChain(song: Pick<QueueItem, 'queueId' | 'id' | 'source'>): Array<string | undefined> {
+  const source = songSourceOf(song);
+  const roomQuality = getRoomPlaybackQuality(source);
+  if (!roomQuality) return [undefined];
+
+  const override = localQualityOverrides.get(trackKeyOf(song));
+  const startQuality = override ?? roomQuality;
+
+  if (useGradualQualityFallback(song)) {
+    return buildQualityFallbackChain(source, startQuality);
+  }
+
+  return buildJumpQualityChain(source, startQuality);
 }
 
 export function clearSongUrlCache() {
   urlCache.clear();
   pendingFetches.clear();
+  localQualityOverrides.clear();
   try {
     sessionStorage.removeItem(URL_CACHE_STORAGE_KEY);
   } catch {
@@ -102,11 +173,12 @@ function trimUrlCache() {
   persistUrlCacheToStorage();
 }
 
-async function fetchSongUrl(
+async function fetchSongUrlOnce(
   song: Pick<QueueItem, 'queueId' | 'id' | 'source' | 'url'>,
+  quality: string | undefined,
   options: { refresh?: boolean } = {},
 ): Promise<string | null> {
-  const key = urlCacheKey(song);
+  const key = urlCacheKey(song, quality);
   if (options.refresh) {
     urlCache.delete(key);
   } else {
@@ -124,25 +196,16 @@ async function fetchSongUrl(
       try {
         url = await getSongUrl({
           id: song.id,
-          source: song.source || 'netease',
+          source: songSourceOf(song),
           url: options.refresh ? undefined : song.url,
-        });
+        }, quality);
       } catch {
-        // 酷狗等源若详情已确认 url 为空，重试同一接口无意义
-        markTrackSourceError(song);
         return null;
       }
-      if (!url) {
-        markTrackSourceError(song);
-        return null;
-      }
-      clearTrackSourceError(song);
+      if (!url) return null;
       urlCache.set(key, url);
       trimUrlCache();
       return url;
-    } catch {
-      markTrackSourceError(song);
-      return null;
     } finally {
       pendingFetches.delete(pendingKey);
     }
@@ -150,6 +213,66 @@ async function fetchSongUrl(
 
   pendingFetches.set(pendingKey, promise);
   return promise;
+}
+
+async function fetchSongUrl(
+  song: Pick<QueueItem, 'queueId' | 'id' | 'source' | 'url'>,
+  options: { refresh?: boolean } = {},
+): Promise<string | null> {
+  const qualities = buildFetchQualityChain(song);
+  const startIndex = Math.max(
+    0,
+    qualities.findIndex((quality) => quality === getEffectivePlaybackQuality(song)),
+  );
+  const tryQualities = qualities.slice(startIndex >= 0 ? startIndex : 0);
+
+  for (let index = 0; index < tryQualities.length; index += 1) {
+    const quality = tryQualities[index];
+    if (quality) {
+      setLocalQualityOverride(song, quality);
+    } else {
+      clearLocalQualityOverride(song);
+    }
+
+    const url = await fetchSongUrlOnce(
+      song,
+      quality,
+      { refresh: options.refresh || index > 0 },
+    );
+    if (url) {
+      clearTrackSourceError(song);
+      return url;
+    }
+  }
+
+  const { isPlaybackLeader } = useRoomStore.getState();
+  if (isPlaybackLeader || !isPlaybackLeaderAheadOnTrack(song)) {
+    markTrackSourceError(song);
+  }
+  return null;
+}
+
+/** 播放中音频加载失败时降档重试：房主在播则降一级，否则直跳最低档 */
+export async function tryDowngradeSongUrl(
+  song: Pick<QueueItem, 'queueId' | 'id' | 'source' | 'url'>,
+): Promise<string | null> {
+  const source = songSourceOf(song);
+  const current = getEffectivePlaybackQuality(song) ?? getRoomPlaybackQuality(source);
+  if (!current) return null;
+
+  let target: string | null;
+  if (useGradualQualityFallback(song)) {
+    target = getDowngradedQuality(source, current);
+  } else {
+    const lowest = getLowestQuality(source);
+    if (!lowest || lowest === current) return null;
+    target = lowest;
+  }
+
+  if (!target) return null;
+
+  setLocalQualityOverride(song, target);
+  return fetchSongUrl(song, { refresh: true });
 }
 
 export function rememberSongUrl(trackKey: string, url: string) {

@@ -27,7 +27,7 @@ import {
   isRestrictedAutoplayEnv,
   type PlayResult,
 } from '../lib/audioUnlock';
-import { prefetchQueueSongs, rememberSongUrl, resolveSongUrl, isTrackSourceError } from '../lib/songPreloadCache';
+import { prefetchQueueSongs, rememberSongUrl, resolveSongUrl, isTrackSourceError, tryDowngradeSongUrl } from '../lib/songPreloadCache';
 import { waitForAudioMinimumReady } from '../lib/audioReady';
 import { applyFollowerSync, applyVisibilityResume, applyPostBufferSync } from '../lib/playbackSync';
 import { getClientPlaybackState, optimisticSeekPosition } from '../lib/playbackState';
@@ -304,8 +304,11 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
         const runtime = activeAudioRuntime;
         if (!runtime) return;
         const live = useRoomStore.getState();
-        if (!useRoomStore.getState().isPlaybackLeader || !live.room?.current || runtime.skippingRef.current) return;
+        if (!live.room?.current || runtime.skippingRef.current) return;
         if (runtime.readyTrackKey.current !== trackKeyOf(live.room.current)) return;
+
+        const song = live.room.current;
+        const isLeader = useRoomStore.getState().isPlaybackLeader;
 
         if (runtime.errorRetries.current < 2) {
           runtime.errorRetries.current += 1;
@@ -316,27 +319,44 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
           });
           return;
         }
-        if (!runtime.urlRefreshAttempted.current && live.room?.current) {
-          runtime.urlRefreshAttempted.current = true;
-          runtime.errorRetries.current = 0;
-          const song = live.room.current;
-          void resolveSongUrl(song, { refresh: true })
-            .then((url) => {
-              controller.enqueue(async () => {
-                const a = controller.audio;
-                a.pause();
-                a.currentTime = 0;
-                a.src = url;
-                a.load();
-                await a.play().catch(() => {});
-              });
-            })
-            .catch(() => {
-              runtime.requestSkip();
+
+        void tryDowngradeSongUrl(song).then((downgradedUrl) => {
+          if (downgradedUrl) {
+            runtime.errorRetries.current = 0;
+            controller.enqueue(async () => {
+              const a = controller.audio;
+              a.pause();
+              a.currentTime = 0;
+              a.src = downgradedUrl;
+              a.load();
+              await a.play().catch(() => {});
             });
-          return;
-        }
-        runtime.requestSkip();
+            return;
+          }
+
+          if (!isLeader) return;
+
+          if (!runtime.urlRefreshAttempted.current) {
+            runtime.urlRefreshAttempted.current = true;
+            runtime.errorRetries.current = 0;
+            void resolveSongUrl(song, { refresh: true })
+              .then((url) => {
+                controller.enqueue(async () => {
+                  const a = controller.audio;
+                  a.pause();
+                  a.currentTime = 0;
+                  a.src = url;
+                  a.load();
+                  await a.play().catch(() => {});
+                });
+              })
+              .catch(() => {
+                runtime.requestSkip();
+              });
+            return;
+          }
+          runtime.requestSkip();
+        });
       });
 
       audio.addEventListener('playing', () => {
@@ -482,18 +502,13 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
         url = await resolveSongUrl(current);
       } catch (err) {
         console.error('Failed to load song:', err);
-        try {
-          url = await resolveSongUrl(current, { refresh: true });
-        } catch (refreshErr) {
-          console.error('Failed to load song (refresh url):', refreshErr);
-          if (gen !== loadGeneration.current) return;
-          readyTrackKey.current = null;
-          setTrackLoading(false);
-          if (useRoomStore.getState().isPlaybackLeader) {
-            requestSkip();
-          }
-          return;
+        if (gen !== loadGeneration.current) return;
+        readyTrackKey.current = null;
+        setTrackLoading(false);
+        if (useRoomStore.getState().isPlaybackLeader) {
+          requestSkip();
         }
+        return;
       }
 
       if (gen !== loadGeneration.current) return;

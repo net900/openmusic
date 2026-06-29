@@ -70,3 +70,36 @@ export function getRoomPlaybackQuality(source: MusicSource): string | undefined 
   if (source === 'tencent') return quality.tencent;
   return undefined;
 }
+
+export function getQualityOptionsForSource(source: MusicSource): QualityOption[] {
+  if (source === 'netease') return NETEASE_QUALITY_OPTIONS;
+  if (source === 'tencent') return TENCENT_QUALITY_OPTIONS;
+  return [];
+}
+
+/** 降一级音质；已在最低档时返回 null */
+export function getDowngradedQuality(source: MusicSource, currentQuality: string): string | null {
+  const options = getQualityOptionsForSource(source);
+  if (options.length === 0) return null;
+  const normalized = QUALITY_ALIASES[currentQuality] || currentQuality;
+  const index = options.findIndex((opt) => opt.value === normalized);
+  if (index <= 0) return null;
+  return options[index - 1].value;
+}
+
+/** 最低可用音质（标准档） */
+export function getLowestQuality(source: MusicSource): string | null {
+  const options = getQualityOptionsForSource(source);
+  return options[0]?.value ?? null;
+}
+
+/** 从房间音质起，生成逐级降档列表（含起始档） */
+export function buildQualityFallbackChain(source: MusicSource, startQuality: string): string[] {
+  const chain: string[] = [];
+  let current: string | null = startQuality;
+  while (current && !chain.includes(current)) {
+    chain.push(current);
+    current = getDowngradedQuality(source, current);
+  }
+  return chain;
+}

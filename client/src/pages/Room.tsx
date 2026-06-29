@@ -626,8 +626,11 @@ export default function Room() {
     }
     setSearching(true);
     setIsPlaylistResults(true);
-    setSearchMode('song');
+    if (!isLgUp) {
+      setSearchMode('song');
+    }
     setActiveSearchMode('song');
+    setOverlaySearchMode('song');
     setPlaylistSearchResults([]);
     setPlaylistSearchTotal(0);
     setSearchedKeyword(`正在解析${platform === 'netease' ? '网易云' : 'QQ音乐'}歌单…`);
@@ -656,7 +659,7 @@ export default function Room() {
     } finally {
       setSearching(false);
     }
-  }, [showToast, searchMode, searchedKeyword, playlistSearchResults, playlistSearchPage, playlistSearchTotal, playlistChannelFilter, playlistSearchPageSize]);
+  }, [showToast, activeSearchMode, searchedKeyword, playlistSearchResults, playlistSearchPage, playlistSearchTotal, playlistChannelFilter, playlistSearchPageSize, isLgUp]);
 
   const handleRecommendPlaylistSelect = useCallback(async (playlist: PlaylistSearchItem) => {
     await handlePlaylistImport(playlist.platform, playlist.id);
@@ -787,19 +790,21 @@ export default function Room() {
     }
     setIsPlaylistResults(false);
     setResults([]);
-    setSearchMode('playlist');
     setActiveSearchMode('playlist');
     setOverlaySearchMode('playlist');
     setSearchedKeyword(playlistSearchBackup.keyword);
-    setQuery(playlistSearchBackup.keyword);
     setOverlayQuery(playlistSearchBackup.keyword);
+    if (!isLgUp) {
+      setSearchMode('playlist');
+      setQuery(playlistSearchBackup.keyword);
+    }
     setPlaylistSearchResults(playlistSearchBackup.results);
     setPlaylistSearchPage(playlistSearchBackup.page);
     setPlaylistSearchTotal(playlistSearchBackup.total);
     setPlaylistChannelFilter(playlistSearchBackup.channel);
     setPlaylistSearchPageSize(playlistSearchBackup.pageSize);
     setListPageSongs([]);
-  }, [playlistSearchBackup, clearSearchResults]);
+  }, [playlistSearchBackup, clearSearchResults, isLgUp]);
 
   const handleAdd = async (song: SearchResult) => {
     if (!songRequestAllowed) {
@@ -998,9 +1003,11 @@ export default function Room() {
   const showPlaylistEmpty = showPlaylistSearch && !playlistSearchLoading && playlistSearchResults.length === 0;
   const showPlaylistSkeleton = showPlaylistSearch && playlistSearchLoading && playlistSearchResults.length === 0;
   const playlistSearchTotalPages = Math.max(1, Math.ceil(playlistSearchTotal / playlistSearchPageSize));
-  const searchButtonLoading = searchMode === 'song'
-    ? searching
-    : playlistSearchLoading && playlistSearchResults.length === 0;
+  const externalSearchButtonLoading = showDesktopSearchOverlay && isLgUp
+    ? false
+    : searchMode === 'song'
+      ? searching
+      : playlistSearchLoading && playlistSearchResults.length === 0;
 
   const overlaySearchButtonLoading = overlaySearchMode === 'song'
     ? searching
@@ -1097,7 +1104,7 @@ export default function Room() {
         disabled={!query.trim() || (searchMode === 'song' && searching)}
         className="flex-shrink-0 px-3.5 sm:px-5 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl bg-netease-red text-white text-sm font-medium hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
       >
-        {searchButtonLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4 sm:hidden" />}
+        {externalSearchButtonLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4 sm:hidden" />}
         <span className="hidden sm:inline">搜索</span>
       </button>
     </div>
