@@ -66,6 +66,15 @@ export function normalizeRoomAudioQuality(
 
 export function getRoomPlaybackQuality(source: MusicSource): string | undefined {
   const room = useRoomStore.getState().room;
+  const quality = normalizeRoomAudioQuality(room?.audioQuality);
+  if (source === 'netease') return quality.netease;
+  if (source === 'tencent') return quality.tencent;
+  return undefined;
+}
+
+/** 本机自选音质，仅用于拉取播放地址，不影响房间同步逻辑 */
+export function getUserPlaybackQuality(source: MusicSource): string | undefined {
+  const room = useRoomStore.getState().room;
   const quality = resolveEffectiveAudioQuality(room?.audioQuality);
   if (source === 'netease') return quality.netease;
   if (source === 'tencent') return quality.tencent;

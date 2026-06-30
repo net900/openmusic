@@ -14,10 +14,12 @@ import {
 
 /**
  * 离散事件同步：
- * - 自动播放（6s 校准 / 缓冲恢复 / visibility）：NORMAL 不追，FINAL（≤3s）尾部一次性 seek
- * - 强制同步（用户/房主拖进度条 forceTime、切歌 forceZero、服务端 playback_state forceCorrection）：立即对齐
+ * - 播放中：UI/歌词跟本机 audio；仅尾部 FINAL（≤3s）或服务端已播完时向前跳
+ * - 强制同步（切歌 forceZero、拖进度 forceTime）：立即对齐
+ * - 状态校正（forceCorrection）：暂停/远端 seek（偏差 > 阈值）时对齐，中途不追
  */
 const FINAL_WINDOW_SEC = 3;
+const REMOTE_SEEK_THRESHOLD_SEC = 1.0;
 
 let finalSyncTrackId: string | null = null;
 let finalSyncDone = false;
@@ -27,11 +29,14 @@ function durationSources() {
   return { lrcDurationMs, lrcTrackKey, mediaDurationMs, mediaTrackKey };
 }
 
-/** 用户 seek / 切歌 / 服务端 playback_state：必须立即同步，不受 NORMAL/FINAL 限制 */
+/** 用户 seek / 切歌：必须立即同步 */
 function isMandatorySync(options: ApplySyncOptions): boolean {
   return options.forceZero === true
-    || options.forceTime !== undefined
-    || options.forceCorrection === true;
+    || options.forceTime !== undefined;
+}
+
+function isStatusCorrection(options: ApplySyncOptions): boolean {
+  return options.forceCorrection === true;
 }
 
 export interface ApplySyncOptions {
@@ -40,7 +45,7 @@ export interface ApplySyncOptions {
   tvMode?: boolean;
   forceTime?: number;
   forceZero?: boolean;
-  /** 服务端 playback_state（房主 seek / 暂停等）：全员强制对齐 */
+  /** 服务端 playback_state：暂停/远端 seek 时校正，播放中途不追 */
   forceCorrection?: boolean;
 }
 
@@ -120,6 +125,39 @@ function applyAutoPlaybackSync(
   return 'played';
 }
 
+/** 播放状态变更：暂停必对齐；播放中仅远端 seek（偏差大）或开声，中途不追 */
+async function applyCorrectionSync(
+  audio: HTMLAudioElement,
+  options: ApplySyncOptions,
+): Promise<PlayResult | 'paused' | 'idle'> {
+  const state = getClientPlaybackState();
+  const target = resolveTargetTime(audio, options);
+  const trackId = state?.trackId || options.song.queueId;
+  const isPlaying = state?.status === 'playing';
+
+  if (!isPlaying) {
+    lockPlaybackRate(audio);
+    if (!audio.paused) audio.pause();
+    explicitHardSeek(audio, target, trackId);
+    return 'paused';
+  }
+
+  const diff = target - audio.currentTime;
+  if (Math.abs(diff) > REMOTE_SEEK_THRESHOLD_SEC) {
+    explicitHardSeek(audio, target, trackId);
+  } else {
+    lockPlaybackRate(audio);
+  }
+
+  if (audio.paused) {
+    const initial = await tryPlayWithAutoplayFallback(audio, Boolean(options.tvMode));
+    const result = await assessPlaybackResult(audio, initial);
+    if (result !== 'played') return result;
+  }
+
+  return 'played';
+}
+
 async function applyMandatorySync(
   audio: HTMLAudioElement,
   options: ApplySyncOptions,
@@ -155,6 +193,10 @@ export async function applyFollowerSync(
 
   if (isMandatorySync(options)) {
     return applyMandatorySync(audio, options);
+  }
+
+  if (isStatusCorrection(options)) {
+    return applyCorrectionSync(audio, options);
   }
 
   if (shouldSkipRoutineSync(audio, options)) {
@@ -203,6 +245,10 @@ export async function applyPostBufferSync(
   if (getClientPlaybackState()?.status !== 'playing') return;
   if (isMandatorySync(options)) {
     await applyMandatorySync(audio, options);
+    return;
+  }
+  if (isStatusCorrection(options)) {
+    await applyCorrectionSync(audio, options);
     return;
   }
   if (shouldSkipRoutineSync(audio, options)) return;

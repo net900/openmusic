@@ -146,6 +146,8 @@ export interface RoomState {
   chatHasMore?: boolean;
   /** @deprecated 不再随 room_update 广播，按需 load_song_history */
   songHistory?: SongHistoryItem[];
+/** 队列为空时服务端已预取的下一首私人漫游（含稳定 queueId，便于客户端预拉 URL） */
+  nextRandom?: QueueItem | null;
   /** 服务端正在为空队列拉取私人漫游 */
   randomLoading?: boolean;
   /** 房间播放音质（网易 / QQ） */

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 
-import { Search, Loader2, Copy, Check, Crown, LogOut, X, Heart, Plus, Download, ListMusic, Upload, History, ListPlus, Pencil, Lock, LockOpen, Radio, ChevronLeft, ChevronRight, Megaphone, Music2, Ban, Sparkles, Settings2 } from 'lucide-react';
+import { Search, Loader2, Copy, Check, LogOut, X, Heart, Plus, Download, ListMusic, Upload, History, ListPlus, Pencil, Lock, LockOpen, Radio, ChevronLeft, ChevronRight, Megaphone, Music2, Ban, Sparkles, Settings2 } from 'lucide-react';
 
 import { searchAllSongs, getAvailableSources, type SearchFilterMode } from '../api/music';
 import { importPlaylist, searchPlaylists, type PlaylistSearchItem, type PlaylistPlatform, type PlaylistChannelFilter as PlaylistChannelFilterMode } from '../api/music/playlist';
@@ -66,13 +66,14 @@ import RoomMemberModal from '../components/RoomMemberModal';
 import RoomQualityModal from '../components/RoomQualityModal';
 import RoomQualityBadge from '../components/RoomQualityBadge';
 import { resolveEffectiveAudioQuality, useUserQualityStore } from '../stores/userQualityStore';
-import { clearSongUrlCache } from '../lib/songPreloadCache';
+import { invalidateUnloadedSongUrlCache, prefetchUpcomingFromRoom } from '../lib/songPreloadCache';
 import { DEFAULT_MEMBER_SETTINGS } from '../lib/memberTierPresets';
 import { canRequestSong } from '../lib/roomPermissions';
 import { markAnnouncementSeen, shouldAutoShowAnnouncement } from '../lib/announcementSeen';
 import JumpRequestBanner from '../components/JumpRequestBanner';
 import Toast from '../components/Toast';
 import Tooltip from '../components/Tooltip';
+import RoleBadge from '../components/RoleBadge';
 import { copyToClipboard } from '../lib/copyToClipboard';
 import { rememberRoomVisit } from '../lib/recentRooms';
 import { buildRoomShareText } from '../lib/roomShare';
@@ -928,8 +929,11 @@ export default function Room() {
 
   const handleSaveUserQuality = useCallback((quality: RoomAudioQuality) => {
     useUserQualityStore.getState().setQuality(quality);
-    clearSongUrlCache();
-    showToast('音质已更新，正在切换…', 'success');
+    const liveRoom = useRoomStore.getState().room;
+    const keepTrackKey = liveRoom?.current ? songKey(liveRoom.current) : null;
+    invalidateUnloadedSongUrlCache(keepTrackKey);
+    if (liveRoom) prefetchUpcomingFromRoom(liveRoom);
+    showToast('音质已更新，当前歌曲继续播放', 'success');
   }, [showToast]);
 
   const handleAssignMemberTier = useCallback(async (userId: string, tier: Omit<RoomMemberTier, 'userId' | 'assignedAt'>) => {
@@ -1431,23 +1435,9 @@ export default function Room() {
                   </Tooltip>
                 )}
 
-                {isOwner && (
+                {isOwner && <RoleBadge role="owner" />}
 
-                  <span className="flex items-center gap-0.5 text-[10px] text-amber-400/90 bg-amber-400/10 px-1.5 py-0.5 rounded-full flex-shrink-0">
-
-                    <Crown className="w-3 h-3" />
-
-                    房主
-
-                  </span>
-
-                )}
-
-                {isAdmin && !isOwner && (
-                  <span className="flex items-center gap-0.5 text-[10px] text-sky-300/90 bg-sky-400/10 px-1.5 py-0.5 rounded-full flex-shrink-0">
-                    管理员
-                  </span>
-                )}
+                {isAdmin && !isOwner && <RoleBadge role="admin" />}
 
                 {isOwner && (
                   <Tooltip side="bottom" content="私人漫游模式">

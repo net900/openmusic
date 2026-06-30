@@ -1,5 +1,5 @@
 import type { RoomMemberTier } from '../types';
-import { normalizeBadgeColor } from '../lib/memberTierPresets';
+import { getMemberBadgeStyle, normalizeBadgeColor } from '../lib/memberTierPresets';
 
 interface Props {
   tier: Pick<RoomMemberTier, 'badgeLabel' | 'badgeColor'>;
@@ -12,13 +12,10 @@ export default function MemberTierBadge({ tier, className = '' }: Props) {
 
   return (
     <span
-      className={`member-badge-shine inline-flex flex-shrink-0 items-center rounded-full px-2 py-0.5 text-[9px] font-semibold leading-4 tracking-wide text-black/90 shadow-sm ${className}`}
-      style={{
-        backgroundColor: color,
-        boxShadow: `0 0 12px ${color}66, inset 0 1px 0 rgba(255,255,255,0.45)`,
-      }}
+      className={`member-badge-shine inline-flex flex-shrink-0 items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-4 tracking-wide antialiased ${className}`}
+      style={getMemberBadgeStyle(color)}
     >
-      {label}
+      <span className="relative z-[2]">{label}</span>
     </span>
   );
 }

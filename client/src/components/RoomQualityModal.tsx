@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom';
+import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import {
   NETEASE_QUALITY_OPTIONS,
@@ -16,16 +17,30 @@ interface Props {
 }
 
 export default function RoomQualityModal({ open, value, saving = false, onClose, onSave }: Props) {
+  const [draft, setDraft] = useState(() => normalizeRoomAudioQuality(value));
+
+  useEffect(() => {
+    if (open) setDraft(normalizeRoomAudioQuality(value));
+  }, [open, value]);
+
   if (!open) return null;
 
-  const current = normalizeRoomAudioQuality(value);
+  const current = draft;
+  const dirty = current.netease !== normalizeRoomAudioQuality(value).netease
+    || current.tencent !== normalizeRoomAudioQuality(value).tencent;
 
   const handleNeteaseChange = (netease: string) => {
-    onSave({ ...current, netease });
+    setDraft((prev) => ({ ...prev, netease }));
   };
 
   const handleTencentChange = (tencent: string) => {
-    onSave({ ...current, tencent });
+    setDraft((prev) => ({ ...prev, tencent }));
+  };
+
+  const handleApply = () => {
+    if (!dirty || saving) return;
+    onSave(current);
+    onClose();
   };
 
   return createPortal(
@@ -104,6 +119,24 @@ export default function RoomQualityModal({ open, value, saving = false, onClose,
               ))}
             </div>
           </section>
+        </div>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-white/10 px-4 py-2 text-sm text-netease-muted transition-colors hover:border-white/20 hover:text-white"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            disabled={!dirty || saving}
+            onClick={handleApply}
+            className="rounded-lg bg-netease-red px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-40"
+          >
+            {saving ? '保存中…' : '应用'}
+          </button>
         </div>
       </div>
     </div>,

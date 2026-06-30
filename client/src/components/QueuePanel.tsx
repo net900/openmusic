@@ -12,6 +12,7 @@ import Tooltip from './Tooltip';
 import TruncateTip from './TruncateTip';
 import MemberQueueFrame from './MemberQueueFrame';
 import MemberTierBadge from './MemberTierBadge';
+import RoleBadge from './RoleBadge';
 
 /** 单条约 64px + 间距，固定显示 3 条 */
 const VISIBLE_ROWS = 3;
@@ -146,9 +147,7 @@ export default function QueuePanel({ fillHeight = false }: Props) {
                       </span>
                     </Tooltip>
                   )}
-                  {isOwnerPriority && (
-                    <span className="rounded-full bg-amber-400/15 px-1.5 py-0 text-[9px] leading-4 text-amber-300">房主</span>
-                  )}
+                  {isOwnerPriority && <RoleBadge role="owner" />}
                   {isAdminPriority && (
                     <TruncateTip
                       text={song.priorityBy!}

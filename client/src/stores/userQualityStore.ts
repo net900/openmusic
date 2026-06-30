@@ -27,14 +27,12 @@ function persistQuality(quality: RoomAudioQuality) {
 
 interface UserQualityStore {
   quality: RoomAudioQuality | null;
-  revision: number;
   setQuality: (quality: RoomAudioQuality) => void;
   clearQuality: () => void;
 }
 
 export const useUserQualityStore = create<UserQualityStore>((set, get) => ({
   quality: readStoredQuality(),
-  revision: 0,
   setQuality: (input) => {
     const quality = normalizeRoomAudioQuality(input);
     const current = get().quality;
@@ -46,7 +44,7 @@ export const useUserQualityStore = create<UserQualityStore>((set, get) => ({
       return;
     }
     persistQuality(quality);
-    set({ quality, revision: get().revision + 1 });
+    set({ quality });
   },
   clearQuality: () => {
     try {
@@ -54,7 +52,7 @@ export const useUserQualityStore = create<UserQualityStore>((set, get) => ({
     } catch {
       // localStorage may be unavailable.
     }
-    set({ quality: null, revision: get().revision + 1 });
+    set({ quality: null });
   },
 }));
 

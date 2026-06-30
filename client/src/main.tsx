@@ -9,7 +9,9 @@ import { applyPageSeo } from './lib/seo';
 import { ensureSessionBootstrap } from './lib/sessionBootstrap';
 import { warmUpSocketSession } from './hooks/useSocket';
 
-installOpenMusicDebug();
+if (import.meta.env.DEV) {
+  installOpenMusicDebug();
+}
 installVisibilitySync();
 applyPageSeo();
 void ensureSessionBootstrap().then(() => warmUpSocketSession());

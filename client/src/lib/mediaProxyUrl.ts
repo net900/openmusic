@@ -1,5 +1,7 @@
 /**
- * 将第三方媒体 URL 转为同源 `/api/media-proxy`，供播放、Canvas、WebGL、fetch 使用。
+ * 将第三方媒体 URL 转为同源 `/api/media-proxy`。
+ * 仅用于：① 着色器背景下的歌曲播放（Web Audio 频谱）；② 封面背景 Canvas 采样（AmbientCoverLayers）。
+ * 普通播放（off / cover-bg）与列表封面走直链或 `/api/meting`。
  */
 
 const MEDIA_PROXY_PATH = '/api/media-proxy';
@@ -40,14 +42,41 @@ export function isSameOriginMediaUrl(url: string): boolean {
 /** 是否需要走 media-proxy（外部 http/https） */
 export function shouldProxyMediaUrl(url: string): boolean {
   if (!url || isSameOriginMediaUrl(url)) return false;
+  if (toLocalMetingPicUrl(url)) return false;
   return /^https?:\/\//i.test(url);
 }
 
 /**
- * 外部媒体一律走同源代理；本站 `/api/meting` 等相对路径保持原样。
+ * Meting `type=pic` 外链 → 同源 `/api/meting`（走重定向与缩略图，勿经 media-proxy）
+ */
+export function toLocalMetingPicUrl(url: string): string | null {
+  if (!url || url.startsWith('/api/meting')) return url.startsWith('/api/meting') ? url : null;
+  try {
+    const base = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
+    const parsed = new URL(url, base);
+    if (parsed.searchParams.get('type') !== 'pic') return null;
+    const server = parsed.searchParams.get('server');
+    const id = parsed.searchParams.get('id');
+    if (!server || !id) return null;
+    return `/api/meting?server=${encodeURIComponent(server)}&type=pic&id=${encodeURIComponent(id)}`;
+  } catch {
+    return null;
+  }
+}
+
+/** 歌曲播放地址走同源代理（HTTPS 站点避免混合内容） */
+export function toProxiedAudioUrl(url: string): string {
+  return toProxiedMediaUrl(url);
+}
+
+/**
+ * 外部媒体走同源代理；本站 `/api/meting` 等相对路径保持原样。
+ * 封面背景 Canvas 采样等场景使用；普通 `<img>` 封面请直接用 getCoverUrl。
  */
 export function toProxiedMediaUrl(url: string): string {
   if (!url || !shouldProxyMediaUrl(url)) return url;
+  const metingPic = toLocalMetingPicUrl(url);
+  if (metingPic) return metingPic;
   return `${MEDIA_PROXY_PATH}?url=${encodeURIComponent(url)}`;
 }
 

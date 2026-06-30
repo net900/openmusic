@@ -339,14 +339,126 @@ body {
 }
 
 .member-badge-shine {
-  background-image: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.55) 50%, transparent 70%);
-  background-size: 200% 100%;
-  animation: member-badge-shimmer 2.6s ease-in-out infinite;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 9999px;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-font-smoothing: antialiased;
+  color: var(--member-badge-color);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--member-badge-color) 42%, transparent);
 }
 
-@keyframes member-badge-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+.member-badge-shine::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--member-badge-color) 26%, transparent) 0%,
+    color-mix(in srgb, var(--member-badge-color) 16%, transparent) 52%,
+    color-mix(in srgb, var(--member-badge-color) 22%, transparent) 100%
+  );
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow:
+    inset 0 0 0 1px var(--member-badge-color),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 0 12px color-mix(in srgb, var(--member-badge-color) 12%, transparent),
+    0 0 10px color-mix(in srgb, var(--member-badge-color) 14%, transparent);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.member-badge-shine::after {
+  content: '';
+  position: absolute;
+  top: -70%;
+  left: -20%;
+  width: 38%;
+  height: 240%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.32) 50%,
+    transparent 100%
+  );
+  transform: rotate(45deg) translateX(-220%);
+  transform-origin: center center;
+  animation: member-badge-shine-sweep 3s ease-in-out infinite;
+  pointer-events: none;
+  opacity: 0.55;
+  z-index: 1;
+}
+
+@keyframes member-badge-shine-sweep {
+  0% {
+    transform: rotate(45deg) translateX(-220%);
+  }
+  100% {
+    transform: rotate(45deg) translateX(420%);
+  }
+}
+
+.role-badge {
+  position: relative;
+  isolation: isolate;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.role-badge-owner {
+  background: linear-gradient(145deg, rgba(120, 72, 0, 0.55) 0%, rgba(68, 40, 0, 0.42) 55%, rgba(42, 24, 0, 0.5) 100%);
+  border: 1px solid rgba(252, 211, 77, 0.72);
+  color: #fff8dc;
+  box-shadow:
+    0 0 0 1px rgba(251, 191, 36, 0.22),
+    0 0 20px rgba(251, 191, 36, 0.42),
+    0 2px 8px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.22);
+  text-shadow: 0 0 10px rgba(251, 191, 36, 0.75), 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.role-badge-owner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(145deg, rgba(255, 237, 160, 0.22) 0%, transparent 42%, rgba(255, 200, 80, 0.08) 100%);
+  pointer-events: none;
+}
+
+.role-badge-admin {
+  background: linear-gradient(145deg, rgba(8, 58, 88, 0.55) 0%, rgba(6, 42, 68, 0.42) 55%, rgba(4, 28, 48, 0.5) 100%);
+  border: 1px solid rgba(125, 211, 252, 0.68);
+  color: #e0f2fe;
+  box-shadow:
+    0 0 0 1px rgba(56, 189, 248, 0.2),
+    0 0 18px rgba(56, 189, 248, 0.36),
+    0 2px 8px rgba(0, 0, 0, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+  text-shadow: 0 0 10px rgba(56, 189, 248, 0.65), 0 1px 2px rgba(0, 0, 0, 0.32);
+}
+
+.role-badge-admin::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(145deg, rgba(186, 230, 253, 0.2) 0%, transparent 42%, rgba(56, 189, 248, 0.06) 100%);
+  pointer-events: none;
+}
+
+.role-badge-content {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
 }
 
 .welcome-chat-card {

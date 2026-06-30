@@ -1,6 +1,7 @@
 import { configureInlineAudio } from './audioUnlock';
 import { useAudioStore } from '../stores/audioStore';
 import { getAudioController } from './audioController';
+import { clearAudioQueueBinding } from './audioTrackBinding';
 
 let sharedAudio: HTMLAudioElement | null = null;
 
@@ -23,6 +24,7 @@ export function stopSharedAudio(): void {
   getAudioController().clearQueue();
   if (!sharedAudio) return;
   sharedAudio.pause();
+  clearAudioQueueBinding(sharedAudio);
   sharedAudio.removeAttribute('src');
   sharedAudio.load();
 }

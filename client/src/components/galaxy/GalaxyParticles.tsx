@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { RoomVisualPresetId } from '../../lib/roomVisualPreset';
-import { toProxiedMediaUrl } from '../../lib/mediaProxyUrl';
 import { makeDotTexture } from './lib/dotTexture';
 import { readGalaxyAudioBands, resumeGalaxyAudioContext } from './lib/galaxyAudio';
 import { buildGalaxyParticleGeometry } from './lib/particleGeometry';
@@ -192,7 +191,7 @@ export default function GalaxyParticles({ coverUrl, preset, isPlaying }: Props) 
       uniforms.uHasCover.value = 0;
       uniforms.uHasDepth.value = 0;
     };
-    img.src = toProxiedMediaUrl(coverUrl);
+    img.src = coverUrl;
 
     return () => {
       cancelled = true;

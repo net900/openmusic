@@ -1,5 +1,6 @@
 import { fetchWithTimeout } from '../api/http';
-import { getClientId, rememberClientId } from './clientId';
+import { rememberClientId } from './clientId';
+import { getDeviceId } from './deviceId';
 
 let bootstrapPromise: Promise<string | null> | null = null;
 
@@ -10,7 +11,7 @@ async function requestSessionBootstrap(): Promise<string | null> {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clientId: getClientId() }),
+      body: JSON.stringify({ deviceId: getDeviceId() }),
     },
     8000,
   );

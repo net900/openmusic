@@ -11,6 +11,7 @@ import { isChatMutedForUser } from '../lib/chatMute';
 import QFaceImage from './QFaceImage';
 import Tooltip from './Tooltip';
 import MemberTierBadge from './MemberTierBadge';
+import RoleBadge from './RoleBadge';
 import { fireWelcomeConfetti } from '../lib/confettiBurst';
 import { ChatMessageReactions, ChatReactionPicker } from './ChatMessageReactions';
 import ChatImageLightbox from './ChatImageLightbox';
@@ -933,9 +934,10 @@ export default function ChatPanel() {
             <div key={msg.id} className={`group flex flex-col ${isMe ? 'items-end' : 'items-start'}`} onContextMenu={(event) => { event.preventDefault(); handleReply(msg); }}>
               <div className={`mb-0.5 flex items-center gap-1.5 ${isMe ? 'flex-row-reverse' : ''}`}>
                 <button type="button" onClick={() => user && handleMentionOption({ type: 'user', user })} className={`text-[10px] ${isMe ? 'text-netease-red/80' : 'text-netease-muted'} hover:text-sky-300`}>
-                  {msg.nickname}{isRoomCreator && <span className="ml-1 text-amber-400/80">房主</span>}
+                  {msg.nickname}
                 </button>
-                {userMemberTier && <MemberTierBadge tier={userMemberTier} className="scale-90" />}
+                {isRoomCreator && <RoleBadge role="owner" />}
+                {userMemberTier && <MemberTierBadge tier={userMemberTier} />}
                 {msg.timestamp > 0 && (
                   <Tooltip content={new Date(msg.timestamp).toLocaleString('zh-CN')} side="bottom">
                     <time
@@ -1161,7 +1163,7 @@ export default function ChatPanel() {
                       className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors ${index === mentionIndex ? 'bg-white/10 text-white' : 'text-white/85 hover:bg-white/10'}`}
                     >
                       <span className="min-w-0 truncate">{option.user.nickname}</span>
-                      {option.user.id === room.creatorId && <span className="ml-2 flex-shrink-0 text-[10px] text-amber-400/80">房主</span>}
+                      {option.user.id === room.creatorId && <RoleBadge role="owner" className="ml-2" />}
                     </button>
                   )
                 ))}

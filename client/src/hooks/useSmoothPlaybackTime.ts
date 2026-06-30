@@ -4,6 +4,7 @@ import { useRoomStore } from '../stores/roomStore';
 import { useAudioStore } from '../stores/audioStore';
 import { resolveDisplayDurationSeconds } from '../hooks/useTrackDuration';
 import { getClientPlaybackState, getPlaybackTime } from '../lib/playbackState';
+import { getSharedAudio } from '../lib/audioElement';
 import type { Song, QueueItem } from '../types';
 
 type TimeCapSong = Pick<Song, 'duration' | 'id' | 'source'> & Partial<Pick<QueueItem, 'queueId'>>;
@@ -41,9 +42,23 @@ function stateMatchesSong(song: TimeCapSong | null | undefined): boolean {
   return state.trackId === song.queueId;
 }
 
-function publishStateTimeForSong(song: TimeCapSong | null | undefined, force = false) {
+function readAudioCurrentTime(song: TimeCapSong | null | undefined): number | null {
+  const audio = getSharedAudio();
+  if (!audio.src || !Number.isFinite(audio.currentTime)) return null;
+  return capSongTime(audio.currentTime, song);
+}
+
+function publishAudioTimeForSong(song: TimeCapSong | null | undefined, force = false) {
   if (!stateMatchesSong(song)) return;
-  publishSmoothPlaybackTime(capSongTime(getPlaybackTime(getClientPlaybackState()), song), force);
+  const fromAudio = readAudioCurrentTime(song);
+  if (fromAudio !== null) {
+    publishSmoothPlaybackTime(fromAudio, force);
+    return;
+  }
+  const state = getClientPlaybackState();
+  if (state) {
+    publishSmoothPlaybackTime(capSongTime(getPlaybackTime(state), song), force);
+  }
 }
 
 function stopLoop() {
@@ -58,7 +73,7 @@ function tick() {
   }
 
   const { room } = useRoomStore.getState();
-  publishStateTimeForSong(room?.current ?? null);
+  publishAudioTimeForSong(room?.current ?? null);
   rafId = requestAnimationFrame(tick);
 }
 
@@ -71,15 +86,26 @@ export function snapSmoothPlaybackTime(time: number) {
   publishSmoothPlaybackTime(time, true);
 }
 
+function readLocalPlaybackTime(song: TimeCapSong | null | undefined): number {
+  if (!song || !stateMatchesSong(song)) {
+    return useAudioStore.getState().smoothPlaybackTime;
+  }
+  const fromAudio = readAudioCurrentTime(song);
+  if (fromAudio !== null) return fromAudio;
+  return capSongTime(getPlaybackTime(getClientPlaybackState()), song);
+}
+
 /**
  * 歌词/进度条用的高频播放时间（全局单例 RAF）。
- * 唯一时间源：服务端 PlaybackState 外推。
+ * 播放中唯一时间源：本机 HTMLAudioElement.currentTime。
+ * 暂停时读 audio 冻结位置；无音频源时回退服务端 PlaybackState。
  */
 export function useSmoothPlaybackTime(): number {
   const isPlaying = useRoomStore((s) => s.room?.isPlaying ?? false);
   const current = useRoomStore((s) => s.room?.current);
   const playbackVersion = useAudioStore((s) => s.playbackVersion);
-  const smoothTime = useAudioStore((s) => s.smoothPlaybackTime);
+  // RAF 写入 smoothPlaybackTime 以驱动重绘；展示值始终读本机 audio
+  useAudioStore((s) => s.smoothPlaybackTime);
 
   useEffect(() => {
     const trackKey = current ? `${current.source}:${current.id}:${current.queueId}` : '';
@@ -88,15 +114,13 @@ export function useSmoothPlaybackTime(): number {
 
     if (trackChanged) {
       snapSmoothPlaybackTime(0);
-      return;
     }
-
-    publishStateTimeForSong(current ?? null, true);
-  }, [playbackVersion, current?.queueId, current?.id, current?.source, isPlaying]);
+  }, [playbackVersion, current?.queueId, current?.id, current?.source]);
 
   useEffect(() => {
+    publishAudioTimeForSong(current ?? null, true);
+
     if (!isPlaying) {
-      publishStateTimeForSong(current ?? null, true);
       return;
     }
 
@@ -109,9 +133,5 @@ export function useSmoothPlaybackTime(): number {
     };
   }, [isPlaying, current?.queueId, current?.id, current?.source, playbackVersion]);
 
-  if (!isPlaying) {
-    if (!stateMatchesSong(current ?? null)) return smoothTime;
-    return capSongTime(getPlaybackTime(getClientPlaybackState()), current ?? null);
-  }
-  return smoothTime;
+  return readLocalPlaybackTime(current ?? null);
 }

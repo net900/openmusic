@@ -2,6 +2,7 @@ import { useAudioStore } from '../stores/audioStore';
 import { useRoomStore } from '../stores/roomStore';
 import { useChatStore } from '../stores/chatStore';
 import { getSharedAudio } from './audioElement';
+import { getAudioBoundQueueId } from './audioTrackBinding';
 import { getClientId } from './clientId';
 import { getClientPlaybackState, getPlaybackTime } from './playbackState';
 
@@ -39,6 +40,7 @@ function safeNumber(value: number | undefined): number | null {
 function audioSnapshot() {
   const audio = getSharedAudio();
   return {
+    boundQueueId: getAudioBoundQueueId(audio) || null,
     src: audio.currentSrc || audio.src || '',
     paused: audio.paused,
     ended: audio.ended,

@@ -29,7 +29,7 @@ export default function SongCover({
       height={pixelSize}
       loading={eager ? 'eager' : 'lazy'}
       decoding="async"
-      {...(eager ? { fetchPriority: 'high' as const } : {})}
+      {...(eager ? { fetchpriority: 'high' as const } : {})}
       onError={() => setFailed(true)}
     />
   );

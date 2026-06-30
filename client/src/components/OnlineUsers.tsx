@@ -6,6 +6,7 @@ import ConfirmModal from './ConfirmModal';
 import Tooltip from './Tooltip';
 import TruncateTip from './TruncateTip';
 import MemberTierBadge from './MemberTierBadge';
+import RoleBadge from './RoleBadge';
 import type { RoomUser } from '../types';
 
 interface Props {
@@ -271,16 +272,8 @@ export default function OnlineUsers({ users, creatorId, memberTiers = {}, onNoti
                             我
                           </span>
                         )}
-                        {isRoomCreator && (
-                          <span className="flex-shrink-0 whitespace-nowrap rounded-full bg-amber-400/15 px-1.5 py-0 text-[9px] leading-4 text-amber-300">
-                            房主
-                          </span>
-                        )}
-                        {isAdmin && !isRoomCreator && (
-                          <span className="flex-shrink-0 whitespace-nowrap rounded-full bg-sky-400/15 px-1.5 py-0 text-[9px] leading-4 text-sky-300">
-                            管理员
-                          </span>
-                        )}
+                        {isRoomCreator && <RoleBadge role="owner" />}
+                        {isAdmin && !isRoomCreator && <RoleBadge role="admin" />}
                         {memberTiers[user.id] && (
                           <MemberTierBadge tier={memberTiers[user.id]} />
                         )}

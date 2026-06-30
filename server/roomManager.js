@@ -19,6 +19,7 @@ import {
   serializeMemberTiersMap,
 } from './memberTier.js';
 import { deleteRoomChatImages, validateChatImageForRoom } from './qiniuOss.js';
+import { collectDeviceIdsForUser, isAccessBanned } from './deviceIdentity.js';
 
 const generateRoomId = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 6);
 const generateId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 12);
@@ -31,6 +32,19 @@ export const INITIAL_CHAT_LIMIT = 100;
 export const CHAT_PAGE_LIMIT = 50;
 const MAX_RANDOM_HISTORY = 200;
 const MAX_RANDOM_PREFETCH_ATTEMPTS = 20;
+
+/** @type {((roomId: string) => void) | null} */
+let onRoomPrefetchReady = null;
+
+export function setOnRoomPrefetchReady(handler) {
+  onRoomPrefetchReady = handler;
+}
+
+function notifyRoomPrefetchReady(room) {
+  if (room?.nextRandom && onRoomPrefetchReady) {
+    onRoomPrefetchReady(room.id);
+  }
+}
 const AUTO_ADVANCE_GRACE_SEC = 0.15;
 const LRC_TAIL_PADDING_SEC = 20;
 
@@ -126,6 +140,7 @@ function snapshotRoomForStorage(room) {
     mutedUserIds: Array.from(room.mutedUserIds || []),
     creatorId: room.creatorId ?? null,
     bannedUserIds: Array.from(room.bannedUserIds || []),
+    bannedDeviceIds: Array.from(room.bannedDeviceIds || []),
     queue: room.queue.map(serializeQueueItemForRoom).filter(Boolean),
     current: serializeQueueItemForRoom(room.current),
     isPlaying: room.isPlaying,
@@ -176,6 +191,7 @@ function restoreRoomFromStorage(data) {
   room.nextRandom = serializeSongMeta(data.nextRandom);
   room.creatorId = data.creatorId ?? null;
   room.bannedUserIds = new Set(data.bannedUserIds || []);
+  room.bannedDeviceIds = new Set(data.bannedDeviceIds || []);
   room.isLocked = Boolean(data.isLocked);
   room.muteAll = Boolean(data.muteAll);
   room.mutedUserIds = new Set(data.mutedUserIds || []);
@@ -304,6 +320,7 @@ function createEmptyRoom(roomId, name, passwordHash = null) {
     creatorId: null,
     ownerId: null,
     bannedUserIds: new Set(),
+    bannedDeviceIds: new Set(),
     queue: [],
     current: null,
     isPlaying: false,
@@ -610,17 +627,18 @@ export function roomExists(roomId) {
   return rooms.has(roomId?.toUpperCase());
 }
 
-export function isUserBanned(roomId, userId) {
+export function isUserBanned(roomId, userId, deviceId = null) {
   const room = rooms.get(roomId?.toUpperCase());
   if (!room || !userId) return false;
-  return room.bannedUserIds?.has(userId) ?? false;
+  return isAccessBanned(room, userId, deviceId);
 }
 
 export function addUser(roomId, userId, nickname, options = {}) {
   const room = rooms.get(roomId);
   if (!room) return null;
 
-  if (room.bannedUserIds?.has(userId)) {
+  const deviceId = options.deviceId || null;
+  if (isAccessBanned(room, userId, deviceId)) {
     return { error: '你已被移出该房间，无法再次进入' };
   }
 
@@ -1056,7 +1074,7 @@ export function renameUser(roomId, socketId, nickname) {
   return { room: serializeRoom(room) };
 }
 
-export function kickUser(roomId, actorId, targetUserId, connectionId = null) {
+export async function kickUser(roomId, actorId, targetUserId, connectionId = null) {
   const room = rooms.get(roomId);
   if (!room) return { error: '房间不存在' };
   if (!canModerate(room, actorId)) return { error: '仅房主或管理员可踢人' };
@@ -1067,7 +1085,13 @@ export function kickUser(roomId, actorId, targetUserId, connectionId = null) {
   if (!target) return { error: '用户不在房间中' };
 
   if (!room.bannedUserIds) room.bannedUserIds = new Set();
+  if (!room.bannedDeviceIds) room.bannedDeviceIds = new Set();
   room.bannedUserIds.add(targetUserId);
+
+  const deviceIds = await collectDeviceIdsForUser(targetUserId);
+  for (const did of deviceIds) {
+    room.bannedDeviceIds.add(did);
+  }
 
   room.users.delete(targetUserId);
   removeUserFromAdmins(room, targetUserId);
@@ -1183,7 +1207,7 @@ export function updateUserLocation(roomId, userId, location) {
 
   user.location = nextLocation;
   persistRoom(room);
-  return serializeRoom(room);
+  return true;
 }
 
 export function canUserMutate(roomId, userId) {
@@ -1388,9 +1412,11 @@ async function ensureNextRandom(room) {
         // const key = songIdentity(song.source, song.id);
         // if (room.randomPlayedKeys.has(key)) continue;
 
-        room.nextRandom = serializeSongMeta(song);
+        room.nextRandom = buildPendingRandomItem(song);
         break;
       }
+      persistRoom(room);
+      notifyRoomPrefetchReady(room);
     } finally {
       room.nextRandomPromise = null;
     }
@@ -1470,22 +1496,40 @@ async function playNextUnlocked(room, options = {}) {
     room.randomLoading = true;
     bumpPlaybackState(room);
     random = await fetchRandomForRoom(room);
+    if (random && !random.queueId) {
+      random = buildPendingRandomItem(random);
+    }
   }
 
   if (room.queue.length > 0) {
-    if (random && !room.nextRandom) room.nextRandom = serializeSongMeta(random);
+    if (random) {
+      const pending = buildPendingRandomItem(random);
+      if (pending && !room.nextRandom) room.nextRandom = pending;
+      notifyRoomPrefetchReady(room);
+    }
     setCurrentSong(room, room.queue.shift());
     return;
   }
 
   if (random) {
-    // recordRandomPlayed(room, random);
-    setCurrentSong(room, {
-      queueId: `random-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      ...random,
-      requestedBy: '私人漫游',
-      addedAt: Date.now(),
-    });
+    const item = random.queueId
+      ? serializeQueueItemForRoom({
+        ...random,
+        requestedBy: '私人漫游',
+        addedAt: random.addedAt || Date.now(),
+      })
+      : buildPendingRandomItem(random);
+    if (!item) {
+      clearNextRandom(room);
+      room.current = null;
+      room.isPlaying = false;
+      room.currentTime = 0;
+      room.startedAt = null;
+      room.randomLoading = true;
+      bumpPlaybackState(room);
+      return;
+    }
+    setCurrentSong(room, item);
     return;
   }
 
@@ -2020,6 +2064,24 @@ function serializeQueueItemForRoom(item) {
   };
 }
 
+/** 私人漫游预取曲目：分配稳定 queueId，播放与客户端 URL 缓存可复用 */
+function buildPendingRandomItem(song) {
+  if (!song?.id) return null;
+  return serializeQueueItemForRoom({
+    queueId: song.queueId || `random-${generateId()}`,
+    id: song.id,
+    source: song.source || 'netease',
+    name: song.name,
+    artist: song.artist,
+    album: song.album,
+    pic: song.pic,
+    duration: song.duration,
+    requestedBy: '私人漫游',
+    requestedById: '',
+    addedAt: song.addedAt || Date.now(),
+  });
+}
+
 /** 随机预取等待歌曲等无 queueId 的元数据（不含 url/lrc/raw） */
 function serializeSongMeta(item) {
   if (!item) return null;
@@ -2123,21 +2185,21 @@ export function reportTrackDuration(roomId, userId, queueId, durationMs, connect
 
 function serializeRoom(room, options = {}) {
   repairPlaybackClock(room);
-  const forUser = options.forUserId ? room.users.get(options.forUserId) : null;
   const forUserId = options.forUserId || null;
+  const forUser = forUserId ? room.users.get(forUserId) : null;
+  const viewerCanModerate = forUserId ? canControlPlayback(room, forUserId) : false;
   return {
     id: room.id,
     name: room.name,
     hasPassword: Boolean(room.passwordHash),
     isLocked: Boolean(room.isLocked),
     muteAll: Boolean(room.muteAll),
-    mutedUserIds: Array.from(room.mutedUserIds || []),
+    mutedUserIds: viewerCanModerate ? Array.from(room.mutedUserIds || []) : undefined,
     chatMuted: forUserId ? isUserChatMuted(room, forUserId) : false,
     ownerId: room.ownerId,
     creatorId: room.creatorId ?? null,
     adminIds: getOrderedAdminIds(room),
-    userNicknames: Object.fromEntries(room.userNicknames || []),
-    ownerConnectionId: room.ownerConnectionId,
+    userNicknames: viewerCanModerate ? Object.fromEntries(room.userNicknames || []) : undefined,
     queue: room.queue.map(serializeQueueItemForRoom).filter(Boolean),
     current: serializeQueueItemForRoom(room.current),
     isPlaying: room.isPlaying,
@@ -2147,6 +2209,7 @@ function serializeRoom(room, options = {}) {
     jumpRequests: room.jumpRequests,
     skipRequests: room.skipRequests,
     chatVisibleSince: forUser?.chatVisibleSince ?? null,
+    nextRandom: serializeQueueItemForRoom(room.nextRandom),
     randomLoading: Boolean(room.randomLoading),
     audioQuality: normalizeRoomAudioQuality(room.audioQuality),
     neteaseFmMode: normalizeFmMode(room.neteaseFmMode),
@@ -2156,6 +2219,13 @@ function serializeRoom(room, options = {}) {
     memberTiers: serializeMemberTiersMap(room.memberTiers),
     memberSettings: serializeMemberSettings(room.memberSettings),
   };
+}
+
+/** 按观众身份序列化房间（隐藏禁言名单、离线昵称映射等管理字段） */
+export function serializeRoomForViewer(roomId, viewerUserId = null) {
+  const room = rooms.get(roomId?.toUpperCase());
+  if (!room) return null;
+  return serializeRoom(room, { forUserId: viewerUserId || null });
 }
 
 export function getRoomInternal(roomId) {

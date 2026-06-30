@@ -105,6 +105,14 @@ export function normalizeBadgeColor(color: string | undefined): string {
   return DEFAULT_MEMBER_TIER.badgeColor;
 }
 
+/** 贵宾角标 — 颜色通过 CSS 变量注入，样式见 index.css */
+export function getMemberBadgeStyle(color: string): CSSProperties {
+  return {
+    color,
+    ['--member-badge-color' as string]: color,
+  };
+}
+
 export function normalizeBorderStyleId(_styleId?: string): string {
   return MEMBER_BORDER_STYLE_ID;
 }

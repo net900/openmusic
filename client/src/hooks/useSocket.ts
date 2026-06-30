@@ -14,7 +14,7 @@ import { stopSharedAudio } from '../lib/audioElement';
 import { resetDriftController } from '../lib/driftController';
 import { resetPhaseSync } from '../lib/playbackSync';
 import { resetSyncStateMachine } from '../lib/syncStateMachine';
-import { prefetchCurrentSong } from '../lib/songPreloadCache';
+import { prefetchUpcomingFromRoom } from '../lib/songPreloadCache';
 import { resetPlaybackStateCache } from '../lib/playbackState';
 import {
   schedulePlaybackState,
@@ -202,8 +202,8 @@ function applyJoinResponse(session: JoinSession, res: JoinAckResponse) {
       Boolean(res.isPlaybackLeader),
     );
   }
-  if (res.room.current) {
-    prefetchCurrentSong(res.room.current);
+  if (res.room.current || res.room.nextRandom || (res.room.queue?.length ?? 0) > 0) {
+    prefetchUpcomingFromRoom(res.room);
   }
 }
 
@@ -311,13 +311,15 @@ if (socketListenersAttached) return;
 
 
 
+let prefetchDebounceTimer = 0;
+
     const onRoomUpdate = (room: RoomState) => {
       debugLog('room_update', {
         roomId: room.id,
         current: room.current?.queueId || null,
         isPlaying: room.isPlaying,
         currentTime: room.currentTime,
-        users: room.users.length,
+        users: room.users?.length ?? 0,
         randomLoading: room.randomLoading,
       });
       const { mySocketId, room: prevRoom } = useRoomStore.getState();
@@ -347,6 +349,11 @@ if (socketListenersAttached) return;
       if (mySocketId) {
         useRoomStore.getState().syncRolesFromRoom(room);
       }
+
+      window.clearTimeout(prefetchDebounceTimer);
+      prefetchDebounceTimer = window.setTimeout(() => {
+        prefetchUpcomingFromRoom(room);
+      }, 400);
     };
 
     const onPlaybackState = (state: PlaybackState) => {

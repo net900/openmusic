@@ -142,11 +142,40 @@ export function readRoomVisualMode(): RoomVisualMode {
   return isMobileDevice() ? 'galaxy' : 'cover-bg';
 }
 
+/** 与 Room 页实际渲染的背景一致（移动端固定星河） */
+export function readEffectiveRoomVisualMode(): RoomVisualMode {
+  if (isMobileDevice()) return 'galaxy';
+  return readRoomVisualMode();
+}
+
+/** 封面背景层需 Canvas 采样时走 media-proxy（cover-bg / void 底图） */
+export function visualModeUsesProxiedCover(mode: RoomVisualMode): boolean {
+  return mode === 'cover-bg' || mode === 'void';
+}
+
+/**
+ * 着色器背景需 Web Audio 分析播放频谱，跨域音频须同源代理。
+ * cover-bg / off 仅播歌不解析频谱，歌曲 URL 直链即可。
+ */
+export function shouldProxySongPlaybackUrl(mode?: RoomVisualMode): boolean {
+  const effective = mode ?? readEffectiveRoomVisualMode();
+  if (effective === 'off' || effective === 'cover-bg') return false;
+  return ROOM_VISUAL_MODE_META[effective].shaderPreset !== undefined;
+}
+
 export function writeRoomVisualMode(mode: RoomVisualMode): void {
+  const prevProxy = shouldProxySongPlaybackUrl();
   try {
     sessionStorage.setItem(MODE_KEY, mode);
   } catch {
     // ignore
+  }
+  if (prevProxy !== shouldProxySongPlaybackUrl()) {
+    try {
+      window.dispatchEvent(new CustomEvent('openmusic:playback-proxy-changed'));
+    } catch {
+      // ignore
+    }
   }
 }
 

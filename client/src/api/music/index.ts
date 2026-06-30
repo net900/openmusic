@@ -4,8 +4,9 @@ import { providers, getAllSources } from './sources';
 import { interleaveSearchResults } from './merge';
 import { hasValidLrc, fetchFallbackLrc } from './lrcFallback';
 import { fetchWithTimeout } from '../http';
-import { toProxiedMediaUrl } from '../../lib/mediaProxyUrl';
-import { getRoomPlaybackQuality } from './quality';
+import { toProxiedMediaUrl, toLocalMetingPicUrl } from '../../lib/mediaProxyUrl';
+import { shouldProxySongPlaybackUrl } from '../../lib/roomVisualPreset';
+import { getUserPlaybackQuality } from './quality';
 import { resizeCoverUrl, type CoverSize } from '../../lib/coverUrl';
 import { requireSessionBootstrap } from '../../lib/sessionBootstrap';
 
@@ -70,11 +71,13 @@ export async function getSongById(source: MusicSource, id: string): Promise<Sear
 export async function getSongUrl(
   song: Pick<Song, 'id' | 'source' | 'url'>,
   qualityOverride?: string,
+  options?: { proxy?: boolean },
 ): Promise<string> {
   const source = song.source || 'netease';
-  const quality = qualityOverride ?? getRoomPlaybackQuality(source);
+  const quality = qualityOverride ?? getUserPlaybackQuality(source);
   const url = await getProvider(source).getSongUrl({ ...song, source }, quality);
-  return toProxiedMediaUrl(url);
+  const useProxy = options?.proxy ?? shouldProxySongPlaybackUrl();
+  return useProxy ? toProxiedMediaUrl(url) : url;
 }
 
 export {
@@ -143,8 +146,8 @@ export function getCoverUrl(
 ): string {
   const source = song.source || 'netease';
   const raw = getProvider(source).getCoverUrl({ ...song, source });
-  const proxied = toProxiedMediaUrl(raw);
-  return resizeCoverUrl(proxied, size);
+  const normalized = toLocalMetingPicUrl(raw) ?? raw;
+  return resizeCoverUrl(normalized, size);
 }
 
 export type { CoverSize } from '../../lib/coverUrl';

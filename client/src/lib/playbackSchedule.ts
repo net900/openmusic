@@ -2,6 +2,7 @@ import type { PlaybackState } from '../types';
 import { useAudioStore } from '../stores/audioStore';
 import { useRoomStore } from '../stores/roomStore';
 import { getSharedAudio } from './audioElement';
+import { getAudioBoundQueueId } from './audioTrackBinding';
 import {
   applyPlaybackState,
   getPlaybackTime,
@@ -11,12 +12,9 @@ import {
 import type { RoomState } from '../types';
 
 let pendingSnapshot: PlaybackState | null = null;
-/** useAudioPlayer 在曲目 load ready 后设置，与 snapshot.trackId 对齐 */
-let audioReadyTrackQueueId: string | null = null;
 
-export function markAudioReadyTrackQueueId(queueId: string | null): void {
-  audioReadyTrackQueueId = queueId;
-}
+/** @deprecated 绑定改在 assign src 时写入 audio.dataset，此处保留空实现兼容旧调用 */
+export function markAudioReadyTrackQueueId(_queueId: string | null): void {}
 
 function syncRoomPlaybackFromState(state: PlaybackState) {
   const { room } = useRoomStore.getState();
@@ -37,7 +35,7 @@ function isAudioReadyForSnapshot(trackId: string): boolean {
   if (!Number.isFinite(duration) || duration <= 0) return false;
   const { room } = useRoomStore.getState();
   if (!room?.current || room.current.queueId !== trackId) return false;
-  if (audioReadyTrackQueueId !== trackId) return false;
+  if (getAudioBoundQueueId(audio) !== trackId) return false;
   return true;
 }
 
@@ -80,7 +78,6 @@ export function hasPendingPlaybackSnapshot(): boolean {
 
 export function resetPlaybackScheduling(): void {
   pendingSnapshot = null;
-  audioReadyTrackQueueId = null;
 }
 
 export function seedPlaybackFromRoom(room: RoomState): void {
