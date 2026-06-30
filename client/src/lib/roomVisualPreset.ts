@@ -1,20 +1,47 @@
 const MODE_KEY = 'openmusic:room-visual-mode';
 const FX_KEY = 'openmusic:room-visual-fx';
 
-/** Mineradio 着色器预设：封面(0) / 星河(5) */
-export type RoomVisualPresetId = 0 | 5;
+/** Mineradio 着色器预设：0=emily … 5=galaxy */
+export type RoomVisualPresetId = 0 | 1 | 2 | 3 | 4 | 5;
 
-/** 房间背景模式 */
-export type RoomVisualMode = 'galaxy' | 'cover' | 'cover-bg' | 'off';
+/** 房间背景模式（对齐 Mineradio presetMeta，不含安魂） */
+export type RoomVisualMode =
+  | 'emily'
+  | 'tunnel'
+  | 'orbit'
+  | 'void'
+  | 'vinyl'
+  | 'galaxy'
+  | 'cover-bg'
+  | 'off';
 
-export const ROOM_VISUAL_MODES: RoomVisualMode[] = ['galaxy', 'cover', 'cover-bg', 'off'];
+export const ROOM_VISUAL_DISPLAY_ORDER: RoomVisualMode[] = [
+  'emily',
+  'galaxy',
+  'vinyl',
+  'orbit',
+  'tunnel',
+  'void',
+  'cover-bg',
+  'off',
+];
+
+export const ROOM_VISUAL_MODES: RoomVisualMode[] = ROOM_VISUAL_DISPLAY_ORDER;
 
 export const ROOM_VISUAL_MODE_META: Record<
   RoomVisualMode,
-  { name: string; hasSettings: boolean; shaderPreset?: RoomVisualPresetId }
+  {
+    name: string;
+    hasSettings: boolean;
+    shaderPreset?: RoomVisualPresetId;
+  }
 > = {
-  galaxy: { name: '星河流动', hasSettings: false, shaderPreset: 5 },
-  cover: { name: '律动背景', hasSettings: true, shaderPreset: 0 },
+  emily: { name: 'emily专辑封面', hasSettings: true, shaderPreset: 0 },
+  tunnel: { name: '滚筒', hasSettings: true, shaderPreset: 1 },
+  orbit: { name: '星球', hasSettings: true, shaderPreset: 2 },
+  void: { name: '虚空', hasSettings: true, shaderPreset: 3 },
+  vinyl: { name: '唱片', hasSettings: true, shaderPreset: 4 },
+  galaxy: { name: '星河', hasSettings: true, shaderPreset: 5 },
   'cover-bg': { name: '封面背景', hasSettings: false },
   off: { name: '关闭背景', hasSettings: false },
 };
@@ -27,11 +54,19 @@ export const ROOM_VISUAL_PRESET_META = Object.fromEntries(
   ROOM_VISUAL_MODES.map((mode) => [mode, ROOM_VISUAL_MODE_META[mode]]),
 ) as Record<RoomVisualMode, { name: string; hasSettings: boolean }>;
 
+const LEGACY_MODE_ALIASES: Record<string, RoomVisualMode> = {
+  cover: 'emily',
+  skull: 'galaxy',
+};
+
 const LEGACY_NUMERIC_MODE: Record<number, RoomVisualMode> = {
+  0: 'emily',
+  1: 'tunnel',
+  2: 'orbit',
+  3: 'void',
+  4: 'vinyl',
   5: 'galaxy',
-  0: 'cover',
-  1: 'galaxy',
-  4: 'galaxy',
+  6: 'galaxy',
 };
 
 export interface RoomVisualFxSettings {
@@ -39,10 +74,18 @@ export interface RoomVisualFxSettings {
   depth: number;
   point: number;
   speed: number;
+  twist: number;
   colorBoost: number;
+  scatter: number;
+  bgFade: number;
   bloomStrength: number;
-  /** 封面模式镜头远近，1 为默认，越小越近 */
+  coverResolution: number;
+  cinemaShake: number;
+  bloom: boolean;
+  edge: boolean;
   cameraDistance: number;
+  visualTintColor: string;
+  visualTintMode: 'auto' | 'custom';
 }
 
 export const DEFAULT_ROOM_VISUAL_FX: RoomVisualFxSettings = {
@@ -50,13 +93,32 @@ export const DEFAULT_ROOM_VISUAL_FX: RoomVisualFxSettings = {
   depth: 1.0,
   point: 1.0,
   speed: 1.0,
+  twist: 0.0,
   colorBoost: 1.1,
+  scatter: 0.0,
+  bgFade: 0.2,
   bloomStrength: 0.62,
+  coverResolution: 1.55,
+  cinemaShake: 0.5,
+  bloom: false,
+  edge: false,
   cameraDistance: 1.0,
+  visualTintColor: '#9db8cf',
+  visualTintMode: 'auto',
 };
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
+}
+
+function normalizeHexColor(input: string, fallback: string): string {
+  const raw = String(input || '').trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(raw)) return raw.toLowerCase();
+  return fallback;
+}
+
+export function normalizeCoverResolution(value: number): number {
+  return clamp(Number(value) || 1, 0.75, 1.55);
 }
 
 export function readRoomVisualMode(): RoomVisualMode {
@@ -65,6 +127,7 @@ export function readRoomVisualMode(): RoomVisualMode {
     for (const key of keys) {
       const raw = sessionStorage.getItem(key);
       if (!raw) continue;
+      if (LEGACY_MODE_ALIASES[raw]) return LEGACY_MODE_ALIASES[raw];
       if (ROOM_VISUAL_MODES.includes(raw as RoomVisualMode)) {
         return raw as RoomVisualMode;
       }
@@ -74,7 +137,7 @@ export function readRoomVisualMode(): RoomVisualMode {
   } catch {
     // ignore
   }
-  return 'galaxy';
+  return 'cover-bg';
 }
 
 export function writeRoomVisualMode(mode: RoomVisualMode): void {
@@ -105,9 +168,20 @@ export function readRoomVisualFx(): RoomVisualFxSettings {
       depth: clamp(Number(parsed.depth) || DEFAULT_ROOM_VISUAL_FX.depth, 0.2, 1.8),
       point: clamp(Number(parsed.point) || DEFAULT_ROOM_VISUAL_FX.point, 0.5, 2.2),
       speed: clamp(Number(parsed.speed) || DEFAULT_ROOM_VISUAL_FX.speed, 0.2, 2.5),
+      twist: clamp(Number(parsed.twist) ?? DEFAULT_ROOM_VISUAL_FX.twist, 0, 0.6),
       colorBoost: clamp(Number(parsed.colorBoost) || DEFAULT_ROOM_VISUAL_FX.colorBoost, 0.5, 2.0),
-      bloomStrength: clamp(Number(parsed.bloomStrength) || DEFAULT_ROOM_VISUAL_FX.bloomStrength, 0, 1.6),
+      scatter: clamp(Number(parsed.scatter) ?? DEFAULT_ROOM_VISUAL_FX.scatter, 0, 0.5),
+      bgFade: clamp(Number(parsed.bgFade) ?? DEFAULT_ROOM_VISUAL_FX.bgFade, 0, 1.2),
+      bloomStrength: clamp(Number(parsed.bloomStrength) ?? DEFAULT_ROOM_VISUAL_FX.bloomStrength, 0, 1.6),
+      coverResolution: normalizeCoverResolution(
+        Number(parsed.coverResolution) || DEFAULT_ROOM_VISUAL_FX.coverResolution,
+      ),
+      cinemaShake: clamp(Number(parsed.cinemaShake) ?? DEFAULT_ROOM_VISUAL_FX.cinemaShake, 0, 1.8),
+      bloom: parsed.bloom === true,
+      edge: parsed.edge === true,
       cameraDistance: clamp(Number(parsed.cameraDistance) || DEFAULT_ROOM_VISUAL_FX.cameraDistance, 0.55, 1.65),
+      visualTintColor: normalizeHexColor(parsed.visualTintColor || '', DEFAULT_ROOM_VISUAL_FX.visualTintColor),
+      visualTintMode: parsed.visualTintMode === 'custom' ? 'custom' : 'auto',
     };
   } catch {
     return { ...DEFAULT_ROOM_VISUAL_FX };
@@ -125,11 +199,19 @@ export function writeRoomVisualFx(fx: RoomVisualFxSettings): void {
 export const ROOM_AMBIENT_GLASS_CLASS =
   'border-white/10 bg-black/20 backdrop-blur-xl [-webkit-backdrop-filter:blur(24px)]';
 
-/** 星河流动 / 律动背景：顶栏底栏全透明，无玻璃模糊 */
 export const ROOM_AMBIENT_GLASS_TRANSPARENT_CLASS = 'border-transparent bg-transparent';
 
+const SHADER_VISUAL_MODES = new Set<RoomVisualMode>([
+  'emily',
+  'tunnel',
+  'orbit',
+  'void',
+  'vinyl',
+  'galaxy',
+]);
+
 export function roomAmbientGlassClass(mode: RoomVisualMode): string {
-  return mode === 'galaxy' || mode === 'cover'
+  return SHADER_VISUAL_MODES.has(mode)
     ? ROOM_AMBIENT_GLASS_TRANSPARENT_CLASS
     : ROOM_AMBIENT_GLASS_CLASS;
 }

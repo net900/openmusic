@@ -3,29 +3,56 @@ import { getClientId, rememberClientId } from './clientId';
 
 let bootstrapPromise: Promise<string | null> | null = null;
 
+async function requestSessionBootstrap(): Promise<string | null> {
+  const res = await fetchWithTimeout(
+    '/api/session/bootstrap',
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId: getClientId() }),
+    },
+    8000,
+  );
+  if (!res.ok) return null;
+  const data = (await res.json()) as { clientId?: string };
+  if (data.clientId) rememberClientId(data.clientId);
+  return data.clientId || null;
+}
+
 /** 通过 HttpOnly Cookie 建立会话，不在 WebSocket 中传递身份令牌 */
 export function ensureSessionBootstrap(force = false): Promise<string | null> {
   if (force) bootstrapPromise = null;
   if (!bootstrapPromise) {
-    bootstrapPromise = fetchWithTimeout(
-      '/api/session/bootstrap',
-      {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId: getClientId() }),
-      },
-      8000,
-    )
-      .then(async (res) => {
-        if (!res.ok) return null;
-        const data = (await res.json()) as { clientId?: string };
-        if (data.clientId) rememberClientId(data.clientId);
-        return data.clientId || null;
-      })
-      .catch(() => null);
+    bootstrapPromise = (async () => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          const clientId = await requestSessionBootstrap();
+          if (clientId) return clientId;
+        } catch {
+          // retry
+        }
+        if (attempt < 2) {
+          await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+        }
+      }
+      return null;
+    })();
   }
   return bootstrapPromise;
+}
+
+/** bootstrap 必须成功，否则抛出错误 */
+export async function requireSessionBootstrap(force = false): Promise<string> {
+  let clientId = await ensureSessionBootstrap(force);
+  if (!clientId) {
+    resetSessionBootstrap();
+    clientId = await ensureSessionBootstrap(true);
+  }
+  if (!clientId) {
+    throw new Error('会话未就绪，请刷新页面后重试');
+  }
+  return clientId;
 }
 
 export function resetSessionBootstrap(): void {

@@ -7,11 +7,12 @@ import { installOpenMusicDebug } from './lib/debugTools';
 import { installVisibilitySync } from './lib/visibilitySync';
 import { applyPageSeo } from './lib/seo';
 import { ensureSessionBootstrap } from './lib/sessionBootstrap';
+import { warmUpSocketSession } from './hooks/useSocket';
 
 installOpenMusicDebug();
 installVisibilitySync();
 applyPageSeo();
-void ensureSessionBootstrap();
+void ensureSessionBootstrap().then(() => warmUpSocketSession());
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

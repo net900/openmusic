@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import { Canvas } from '@react-three/fiber';
-import type { RoomVisualFxSettings, RoomVisualPresetId } from '../../lib/roomVisualPreset';
+import type { RoomVisualPresetId } from '../../lib/roomVisualPreset';
 import GalaxyCameraRig from './GalaxyCameraRig';
 import GalaxyParticles from './GalaxyParticles';
 
@@ -8,7 +8,6 @@ interface Props {
   className?: string;
   coverUrl?: string | null;
   preset: RoomVisualPresetId;
-  fx: RoomVisualFxSettings;
   isPlaying: boolean;
 }
 
@@ -16,7 +15,6 @@ export default function GalaxyBackground3D({
   className = 'absolute inset-0',
   coverUrl,
   preset,
-  fx,
   isPlaying,
 }: Props) {
   return (
@@ -39,8 +37,8 @@ export default function GalaxyBackground3D({
       >
         <color attach="background" args={['#08090b']} />
         <Suspense fallback={null}>
-          <GalaxyCameraRig preset={preset} fx={fx} />
-          <GalaxyParticles coverUrl={coverUrl} preset={preset} fx={fx} isPlaying={isPlaying} />
+          <GalaxyCameraRig preset={preset} />
+          <GalaxyParticles coverUrl={coverUrl} preset={preset} isPlaying={isPlaying} />
         </Suspense>
       </Canvas>
     </div>

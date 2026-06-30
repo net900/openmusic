@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, Sparkles } from 'lucide-react';
 import {
-  ROOM_VISUAL_MODES,
+  ROOM_VISUAL_DISPLAY_ORDER,
   ROOM_VISUAL_MODE_META,
   type RoomVisualMode,
 } from '../lib/roomVisualPreset';
@@ -48,9 +48,9 @@ export default function RoomVisualPresetSelect({ value, onChange }: Props) {
         <div
           role="listbox"
           aria-label="视觉预设"
-          className="absolute right-0 top-full z-50 mt-1 min-w-[8.5rem] rounded-xl border border-white/15 bg-[#14161c] py-1 shadow-2xl animate-fade-in"
+          className="absolute right-0 top-full z-50 mt-1 max-h-[min(70vh,420px)] min-w-[9.5rem] overflow-y-auto rounded-xl border border-white/15 bg-[#14161c] py-1 shadow-2xl animate-fade-in"
         >
-          {ROOM_VISUAL_MODES.map((mode) => (
+          {ROOM_VISUAL_DISPLAY_ORDER.map((mode) => (
             <button
               key={mode}
               type="button"

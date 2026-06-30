@@ -22,7 +22,7 @@ import {
   resetPlaybackScheduling,
 } from '../lib/playbackSchedule';
 import { rememberClientIdentity } from '../lib/clientId';
-import { ensureSessionBootstrap, resetSessionBootstrap } from '../lib/sessionBootstrap';
+import { requireSessionBootstrap, resetSessionBootstrap } from '../lib/sessionBootstrap';
 import { mergeRoomState } from '../lib/mergeRoomState';
 import { debugLog, setDebugSocketProvider } from '../lib/debugTools';
 import { bindReportTrackDurationSocket } from '../lib/reportTrackDuration';
@@ -60,12 +60,64 @@ function getSocket(): Socket {
 
       autoConnect: false,
 
+      withCredentials: true,
+
     });
 
   }
 
   return socket;
 
+}
+
+function waitForSocketConnect(s: Socket, timeoutMs = SOCKET_ACK_TIMEOUT_MS): Promise<void> {
+  if (s.connected) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      s.off('connect', onConnect);
+      reject(new Error('连接超时，请检查网络'));
+    }, timeoutMs);
+    const onConnect = () => {
+      window.clearTimeout(timer);
+      resolve();
+    };
+    s.once('connect', onConnect);
+    if (!s.active) s.connect();
+  });
+}
+
+/** 确保会话已 bootstrap，并在需要时建立 socket 连接（不无故重连） */
+async function ensureSocketReady(forceBootstrap = false): Promise<Socket> {
+  await requireSessionBootstrap(forceBootstrap);
+  const s = getSocket();
+  if (s.connected) return s;
+  socketConnectRequested = true;
+  await waitForSocketConnect(s);
+  return s;
+}
+
+/** 仅在会话失效时重建 socket，确保握手携带 Cookie */
+async function reconnectSocketSession(forceBootstrap = false): Promise<Socket> {
+  await requireSessionBootstrap(forceBootstrap);
+  const s = getSocket();
+  if (s.connected || s.active) {
+    await new Promise<void>((resolve) => {
+      s.once('disconnect', () => resolve());
+      s.disconnect();
+    });
+  }
+  socketConnectRequested = true;
+  await waitForSocketConnect(s);
+  return s;
+}
+
+/** 应用启动后预热 socket，缩短首次进房等待 */
+export async function warmUpSocketSession(): Promise<void> {
+  try {
+    await ensureSocketReady(false);
+  } catch {
+    // 首次预热失败不影响后续进房重试
+  }
 }
 
 bindReportTrackDurationSocket(getSocket);
@@ -224,8 +276,10 @@ function rejoinActiveRoom() {
     return;
   }
 
-  ensureSessionBootstrap()
-    .then(() => doRejoin())
+  ensureSocketReady(false)
+    .then(() => {
+      doRejoin();
+    })
     .catch(() => {
       rejoinInFlight = false;
     });
@@ -412,14 +466,27 @@ if (!connected.current && !socketConnectRequested) {
       );
 
       const runJoin = async () => {
-        if (!options.readOnly) {
-          await ensureSessionBootstrap();
+        try {
+          await ensureSocketReady(false);
+        } catch {
+          resetSessionBootstrap();
+          try {
+            await reconnectSocketSession(true);
+          } catch (err) {
+            const message = err instanceof Error ? err.message : '会话未就绪，请刷新页面后重试';
+            return { success: false, error: message, needsSession: true };
+          }
         }
-        connect();
+
         let res = await attemptJoin();
         if (!res.success && res.needsSession && !options.readOnly) {
           resetSessionBootstrap();
-          await ensureSessionBootstrap(true);
+          try {
+            await reconnectSocketSession(true);
+          } catch (err) {
+            const message = err instanceof Error ? err.message : '会话未就绪，请刷新页面后重试';
+            return { success: false, error: message, needsSession: true };
+          }
           res = await attemptJoin();
         }
         if (res.success && res.room) {

@@ -75,15 +75,20 @@ import { buildRoomShareText } from '../lib/roomShare';
 import RoomVisualPresetSelect from '../components/RoomVisualPresetSelect';
 import RoomVisualFxPanel from '../components/RoomVisualFxPanel';
 import {
+  readRoomVisualFx,
   roomAmbientGlassClass,
   ROOM_VISUAL_MODE_META,
-  readRoomVisualFx,
   readRoomVisualMode,
-  writeRoomVisualFx,
   writeRoomVisualMode,
+  DEFAULT_ROOM_VISUAL_FX,
   type RoomVisualFxSettings,
   type RoomVisualMode,
 } from '../lib/roomVisualPreset';
+import {
+  commitRoomVisualFx,
+  patchRoomVisualFx,
+  roomVisualFxLive,
+} from '../lib/roomVisualFxLive';
 
 
 function roomPasswordKey(roomId: string) {
@@ -236,8 +241,13 @@ export default function Room() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [hotRefreshKey, setHotRefreshKey] = useState(0);
   const [visualMode, setVisualMode] = useState<RoomVisualMode>(readRoomVisualMode);
-  const [visualFx, setVisualFx] = useState<RoomVisualFxSettings>(readRoomVisualFx);
+  const [visualFx, setVisualFx] = useState<RoomVisualFxSettings>(() => {
+    const fx = readRoomVisualFx();
+    roomVisualFxLive.current = fx;
+    return fx;
+  });
   const [visualFxOpen, setVisualFxOpen] = useState(false);
+  const [visualFxDragging, setVisualFxDragging] = useState(false);
   const isLgUp = useMediaQuery('(min-width: 1024px)');
   const [favoritesOpen, setFavoritesOpen] = useState(false);
   const [songHistoryOpen, setSongHistoryOpen] = useState(false);
@@ -986,9 +996,14 @@ export default function Room() {
     writeRoomVisualMode(mode);
   };
 
-  const handleVisualFxChange = (next: RoomVisualFxSettings) => {
+  const patchVisualFx = (patch: Partial<RoomVisualFxSettings>) => {
+    const next = patchRoomVisualFx(patch);
     setVisualFx(next);
-    writeRoomVisualFx(next);
+  };
+
+  const resetVisualFx = () => {
+    const next = commitRoomVisualFx({ ...DEFAULT_ROOM_VISUAL_FX });
+    setVisualFx(next);
   };
 
 
@@ -1278,15 +1293,16 @@ export default function Room() {
       <RoomAmbientBackground
         song={room.current}
         visualMode={visualMode}
-        visualFx={visualFx}
         isPlaying={Boolean(room.isPlaying)}
       />
 
       <RoomVisualFxPanel
         open={visualFxOpen}
         value={visualFx}
-        onChange={handleVisualFxChange}
+        onPatch={patchVisualFx}
+        onReset={resetVisualFx}
         onClose={() => setVisualFxOpen(false)}
+        onDraggingChange={setVisualFxDragging}
       />
 
       <AudioEngine />
@@ -1336,6 +1352,11 @@ export default function Room() {
         onClose={handleCloseAnnouncementPopup}
       />
 
+      <div
+        className={`room-page-chrome relative z-10 flex min-h-0 flex-1 flex-col transition-opacity duration-200 ${
+          visualFxDragging ? 'pointer-events-none opacity-0' : ''
+        }`}
+      >
       <header className={`relative z-30 flex-shrink-0 border-b px-3 py-2.5 sm:px-4 sm:py-3 safe-top ${ambientGlassClass}`}>
 
         <div className="max-w-[1680px] mx-auto flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
@@ -2013,6 +2034,7 @@ export default function Room() {
       {(room.current || room.randomLoading) && (
         <MiniPlayer onExpand={() => setShowPlayer(true)} barClassName={ambientGlassClass} />
       )}
+      </div>
 
 
 

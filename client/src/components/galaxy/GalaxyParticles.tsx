@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import type { RoomVisualFxSettings, RoomVisualPresetId } from '../../lib/roomVisualPreset';
+import type { RoomVisualPresetId } from '../../lib/roomVisualPreset';
 import { toProxiedMediaUrl } from '../../lib/mediaProxyUrl';
 import { makeDotTexture } from './lib/dotTexture';
 import { readGalaxyAudioBands, resumeGalaxyAudioContext } from './lib/galaxyAudio';
@@ -11,6 +11,9 @@ import {
   PARTICLE_BLOOM_VERTEX_SHADER,
   PARTICLE_FRAGMENT_SHADER,
 } from './lib/shaders';
+import { roomVisualFxLive } from '../../lib/roomVisualFxLive';
+import { effectiveBloomStrength, syncGalaxyFxUniforms } from './lib/syncVisualUniforms';
+import { buildCoverEdgeTexture } from './lib/buildCoverEdgeTexture';
 import { PARTICLE_VERTEX_SHADER } from './lib/visualVertexShader';
 
 const DEFAULT_COVER = '#1c1c28';
@@ -32,21 +35,22 @@ function makePlaceholderTexture(color = DEFAULT_COVER): THREE.CanvasTexture {
 interface Props {
   coverUrl?: string | null;
   preset: RoomVisualPresetId;
-  fx: RoomVisualFxSettings;
   isPlaying: boolean;
 }
 
-export default function GalaxyParticles({ coverUrl, preset, fx, isPlaying }: Props) {
+export default function GalaxyParticles({ coverUrl, preset, isPlaying }: Props) {
   const geometry = useMemo(() => buildGalaxyParticleGeometry(), []);
   const bloomGeometry = useMemo(() => geometry.clone(), [geometry]);
   const dotTex = useMemo(() => makeDotTexture(), []);
-  const edgeTex = useMemo(() => makePlaceholderTexture('#800000'), []);
+  const edgeTexRef = useRef<THREE.Texture>(makePlaceholderTexture('#800000'));
+  const edgeTex = edgeTexRef.current;
   const rippleTex = useMemo(() => makePlaceholderTexture('#000000'), []);
   const coverTex = useRef<THREE.Texture>(makePlaceholderTexture());
   const prevCoverTex = useRef<THREE.Texture>(makePlaceholderTexture());
   const colorMixRef = useRef(1);
   const presetRef = useRef(preset);
   const burstRef = useRef(0);
+  const bloomRef = useRef<THREE.Points>(null);
 
   const uniforms = useRef({
     uTime: { value: 0 },
@@ -57,29 +61,29 @@ export default function GalaxyParticles({ coverUrl, preset, fx, isPlaying }: Pro
     uEnergy: { value: 0 },
     uBurstAmt: { value: 0 },
     uPreset: { value: preset },
-    uIntensity: { value: fx.intensity },
-    uDepth: { value: fx.depth },
-    uPointScale: { value: fx.point },
-    uSpeed: { value: fx.speed },
-    uTwist: { value: 0 },
+    uIntensity: { value: roomVisualFxLive.current.intensity },
+    uDepth: { value: roomVisualFxLive.current.depth },
+    uPointScale: { value: roomVisualFxLive.current.point },
+    uSpeed: { value: roomVisualFxLive.current.speed },
+    uTwist: { value: roomVisualFxLive.current.twist },
     uVinylSpin: { value: 0 },
-    uColorBoost: { value: fx.colorBoost },
-    uScatter: { value: 0.008 },
-    uCoverRes: { value: 1.0 },
-    uBgFade: { value: 0.2 },
-    uBloomStrength: { value: fx.bloomStrength },
+    uColorBoost: { value: roomVisualFxLive.current.colorBoost },
+    uScatter: { value: roomVisualFxLive.current.scatter },
+    uCoverRes: { value: roomVisualFxLive.current.coverResolution },
+    uBgFade: { value: roomVisualFxLive.current.bgFade },
+    uBloomStrength: { value: effectiveBloomStrength(roomVisualFxLive.current) },
     uBloomSize: { value: 2.65 },
     uHasCover: { value: 0 },
     uHasDepth: { value: 0 },
-    uEdgeEnabled: { value: 0 },
+    uEdgeEnabled: { value: roomVisualFxLive.current.edge ? 1 : 0 },
     uAiBoost: { value: 0 },
     uMouseActive: { value: 0 },
     uMouseXY: { value: new THREE.Vector2(-999, -999) },
     uHandXY: { value: new THREE.Vector2(-999, -999) },
     uHandActive: { value: 0 },
     uGestureGrip: { value: 0 },
-    uTintColor: { value: new THREE.Color('#9db8cf') },
-    uTintStrength: { value: 0 },
+    uTintColor: { value: new THREE.Color(roomVisualFxLive.current.visualTintColor) },
+    uTintStrength: { value: roomVisualFxLive.current.visualTintMode === 'custom' ? 0.42 : 0 },
     uPixel: { value: Math.min(window.devicePixelRatio || 1, 1.75) },
     uColorMixT: { value: 1 },
     uLoading: { value: 0 },
@@ -131,19 +135,11 @@ export default function GalaxyParticles({ coverUrl, preset, fx, isPlaying }: Pro
   }, [preset, uniforms]);
 
   useEffect(() => {
-    uniforms.uIntensity.value = fx.intensity;
-    uniforms.uDepth.value = fx.depth;
-    uniforms.uPointScale.value = fx.point;
-    uniforms.uSpeed.value = fx.speed;
-    uniforms.uColorBoost.value = fx.colorBoost;
-    uniforms.uBloomStrength.value = fx.bloomStrength;
-  }, [fx, uniforms]);
-
-  useEffect(() => {
     const prev = coverTex.current;
     prevCoverTex.current = prev;
     uniforms.uColorMixT.value = 0;
     colorMixRef.current = 0;
+    uniforms.uHasDepth.value = 0;
 
     if (!coverUrl) {
       const placeholder = makePlaceholderTexture();
@@ -153,9 +149,11 @@ export default function GalaxyParticles({ coverUrl, preset, fx, isPlaying }: Pro
       return;
     }
 
+    let cancelled = false;
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
+      if (cancelled) return;
       const tex = new THREE.Texture(img);
       tex.minFilter = THREE.LinearFilter;
       tex.magFilter = THREE.LinearFilter;
@@ -163,22 +161,50 @@ export default function GalaxyParticles({ coverUrl, preset, fx, isPlaying }: Pro
       coverTex.current = tex;
       uniforms.uCoverTex.value = tex;
       uniforms.uHasCover.value = 1;
+
+      try {
+        const sourceCanvas = document.createElement('canvas');
+        sourceCanvas.width = img.naturalWidth || img.width;
+        sourceCanvas.height = img.naturalHeight || img.height;
+        const ctx = sourceCanvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          const edgeCanvas = buildCoverEdgeTexture(sourceCanvas);
+          const prevEdge = edgeTexRef.current;
+          const nextEdge = new THREE.CanvasTexture(edgeCanvas);
+          nextEdge.minFilter = THREE.LinearFilter;
+          nextEdge.magFilter = THREE.LinearFilter;
+          nextEdge.needsUpdate = true;
+          edgeTexRef.current = nextEdge;
+          uniforms.uEdgeTex.value = nextEdge;
+          uniforms.uHasDepth.value = 0.55;
+          if (prevEdge && prevEdge !== nextEdge) prevEdge.dispose();
+        }
+      } catch {
+        // 边缘贴图失败时仍保留封面粒子
+      }
     };
     img.onerror = () => {
+      if (cancelled) return;
       const placeholder = makePlaceholderTexture();
       coverTex.current = placeholder;
       uniforms.uCoverTex.value = placeholder;
       uniforms.uHasCover.value = 0;
+      uniforms.uHasDepth.value = 0;
     };
     img.src = toProxiedMediaUrl(coverUrl);
 
     return () => {
+      cancelled = true;
       img.onload = null;
       img.onerror = null;
     };
   }, [coverUrl, uniforms]);
 
   useFrame((state, delta) => {
+    const currentFx = roomVisualFxLive.current;
+    syncGalaxyFxUniforms(uniforms, currentFx);
+
     resumeGalaxyAudioContext();
     const bands = readGalaxyAudioBands();
     uniforms.uTime.value = state.clock.elapsedTime;
@@ -188,7 +214,13 @@ export default function GalaxyParticles({ coverUrl, preset, fx, isPlaying }: Pro
     uniforms.uBeat.value = bands.beat;
     uniforms.uEnergy.value = bands.energy;
     uniforms.uPixel.value = state.gl.getPixelRatio();
-    uniforms.uVinylSpin.value = isPlaying ? state.clock.elapsedTime * fx.speed * 0.42 : state.clock.elapsedTime * 0.05;
+    uniforms.uVinylSpin.value = isPlaying
+      ? state.clock.elapsedTime * currentFx.speed * 0.42
+      : state.clock.elapsedTime * 0.05;
+
+    if (bloomRef.current) {
+      bloomRef.current.visible = effectiveBloomStrength(currentFx) > 0;
+    }
 
     burstRef.current *= 1 - delta * 2.5;
     uniforms.uBurstAmt.value = burstRef.current;
@@ -204,17 +236,23 @@ export default function GalaxyParticles({ coverUrl, preset, fx, isPlaying }: Pro
       material.dispose();
       bloomMaterial.dispose();
       dotTex.dispose();
-      edgeTex.dispose();
+      edgeTexRef.current.dispose();
       rippleTex.dispose();
       coverTex.current.dispose();
       prevCoverTex.current.dispose();
     },
-    [bloomGeometry, bloomMaterial, dotTex, edgeTex, geometry, material, rippleTex],
+    [bloomGeometry, bloomMaterial, dotTex, geometry, material, rippleTex],
   );
 
   return (
     <>
-      <points geometry={bloomGeometry} material={bloomMaterial} frustumCulled={false} renderOrder={0} />
+      <points
+        ref={bloomRef}
+        geometry={bloomGeometry}
+        material={bloomMaterial}
+        frustumCulled={false}
+        renderOrder={0}
+      />
       <points geometry={geometry} material={material} frustumCulled={false} renderOrder={1} />
     </>
   );

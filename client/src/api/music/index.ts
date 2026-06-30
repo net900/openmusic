@@ -7,7 +7,7 @@ import { fetchWithTimeout } from '../http';
 import { toProxiedMediaUrl } from '../../lib/mediaProxyUrl';
 import { getRoomPlaybackQuality } from './quality';
 import { resizeCoverUrl, type CoverSize } from '../../lib/coverUrl';
-import { ensureSessionBootstrap } from '../../lib/sessionBootstrap';
+import { requireSessionBootstrap } from '../../lib/sessionBootstrap';
 
 function getProvider(source: MusicSource) {
   return providers[source];
@@ -253,7 +253,7 @@ export async function resolveDurationFromLyrics(
 }
 
 export async function createRoom(name?: string, password?: string): Promise<{ id: string; name: string }> {
-  await ensureSessionBootstrap();
+  await requireSessionBootstrap();
   const payload: { name?: string; password?: string } = {};
   if (name?.trim()) payload.name = name.trim();
   if (password?.trim()) payload.password = password.trim();
