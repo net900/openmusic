@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, type MutableRefObject } from 'react';
 import { useRoomStore } from '../stores/roomStore';
+import { useUserQualityStore } from '../stores/userQualityStore';
 import { useAudioStore } from '../stores/audioStore';
 import { useSocket } from '../hooks/useSocket';
 import { getTrackKey } from '../api/music';
@@ -106,6 +107,7 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const room = useRoomStore((s) => s.room);
   const isPlaybackLeader = useRoomStore((s) => s.isPlaybackLeader);
+  const userQualityRevision = useUserQualityStore((s) => s.revision);
   const trackLoading = useAudioStore((s) => s.trackLoading);
   const setTrackLoading = useAudioStore((s) => s.setTrackLoading);
   const setLrcDuration = useAudioStore((s) => s.setLrcDuration);
@@ -118,6 +120,7 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
   const playbackVersion = useAudioStore((s) => s.playbackVersion);
   const { togglePlay, seek, skipSong, finishSong } = useSocket();
 
+  const prevQualityRevisionRef = useRef(userQualityRevision);
   const lastTrackKey = useRef<string | null>(null);
   const readyTrackKey = useRef<string | null>(null);
   const endedTrackKey = useRef<string | null>(null);
@@ -456,6 +459,8 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
     }
 
     const trackKey = trackKeyOf(current);
+    const qualityChanged = prevQualityRevisionRef.current !== userQualityRevision;
+    prevQualityRevisionRef.current = userQualityRevision;
 
     if (prevQueueIdRef.current && prevQueueIdRef.current !== current.queueId) {
       justSkippedRef.current = true;
@@ -468,7 +473,7 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
       endedTrackKey.current = null;
     }
 
-    if (readyTrackKey.current === trackKey) {
+    if (readyTrackKey.current === trackKey && !qualityChanged) {
       return;
     }
 
@@ -499,7 +504,7 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
 
       let url: string;
       try {
-        url = await resolveSongUrl(current);
+        url = await resolveSongUrl(current, { refresh: qualityChanged });
       } catch (err) {
         console.error('Failed to load song:', err);
         if (gen !== loadGeneration.current) return;
@@ -607,6 +612,7 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
     room?.current?.id,
     room?.current?.queueId,
     room?.current?.source,
+    userQualityRevision,
     tvMode,
     initAudio,
     controller,

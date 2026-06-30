@@ -95,6 +95,7 @@ export interface ChatMessage {
   userId: string;
   nickname: string;
   text: string;
+  imageUrl?: string | null;
   kind?: 'chat' | 'welcome' | 'system';
   mentions?: ChatMention[];
   replyTo?: ChatReplyRef | null;

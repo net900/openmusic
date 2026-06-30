@@ -18,6 +18,7 @@ import {
   serializeMemberTier,
   serializeMemberTiersMap,
 } from './memberTier.js';
+import { deleteRoomChatImages, validateChatImageForRoom } from './qiniuOss.js';
 
 const generateRoomId = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 6);
 const generateId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 12);
@@ -106,9 +107,11 @@ function scheduleRoomDestroy(roomId) {
   room.destroyTimer = setTimeout(() => {
     const current = rooms.get(roomId);
     if (current && current.users.size === 0) {
-      rooms.delete(roomId);
-      invalidateRoomsListCache();
-      void deleteRoomFromStorage(roomId);
+      void deleteRoomChatImages(roomId).finally(() => {
+        rooms.delete(roomId);
+        invalidateRoomsListCache();
+        void deleteRoomFromStorage(roomId);
+      });
     }
   }, ROOM_EMPTY_TTL_MS);
 }
@@ -1813,6 +1816,7 @@ function serializeChatMessage(message) {
     userId: message.userId,
     nickname: message.nickname,
     text: message.text,
+    imageUrl: message.imageUrl || null,
     kind: message.kind || 'chat',
     mentions: message.mentions || [],
     replyTo: message.replyTo || null,
@@ -1865,12 +1869,20 @@ export function addChatMessage(roomId, userId, text, options = {}) {
   if (!room) return { error: '房间不存在' };
 
   const content = String(text || '').trim();
-  if (!content) return { error: '消息不能为空' };
+  const imageUrl = String(options.imageUrl || '').trim();
+  const imageKey = String(options.imageKey || '').trim();
+
+  if (!content && !imageUrl) return { error: '消息不能为空' };
   if (content.length > 500) return { error: '消息过长' };
 
   const user = room.users.get(userId);
   if (isUserChatMuted(room, userId)) {
     return { error: room.muteAll ? '当前房间已全体禁言' : '你已被禁言' };
+  }
+
+  if (imageUrl) {
+    const imageCheck = validateChatImageForRoom(roomId, imageUrl, imageKey);
+    if (imageCheck.error) return imageCheck;
   }
 
   if (hasMentionAllInText(content) && !canControlPlayback(room, userId)) {
@@ -1887,6 +1899,8 @@ export function addChatMessage(roomId, userId, text, options = {}) {
     userId,
     nickname: user?.nickname || '匿名',
     text: content,
+    imageUrl: imageUrl || undefined,
+    imageKey: imageKey || undefined,
     mentions,
     replyTo: options.replyTo || null,
     timestamp: Date.now(),

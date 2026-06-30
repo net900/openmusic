@@ -73,6 +73,10 @@ import { importNeteasePlaylist, importQqPlaylist, fetchNeteasePlaylistMetas } fr
 import { fetchNeteaseHotToplist } from './neteaseToplist.js';
 import { importFavoriteSongs, listFavoriteSongs, setFavoriteSong } from './roomStorage.js';
 import { recordSongRequest, getHotSongs } from './songHotRank.js';
+import {
+  createChatImageUploadToken,
+  isQiniuConfigured,
+} from './qiniuOss.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 4000;
@@ -489,9 +493,11 @@ app.get('/api/media-proxy', async (req, res) => {
   }
 
   const raw = String(req.query.url || '').trim();
+  const thumbPx = Math.min(512, Math.max(0, parseInt(String(req.query.size || ''), 10) || 0));
+  let fetchUrl = raw;
   let parsed;
   try {
-    parsed = new URL(raw);
+    parsed = new URL(fetchUrl);
   } catch {
     return res.status(400).json({ error: '无效地址' });
   }
@@ -504,12 +510,16 @@ app.get('/api/media-proxy', async (req, res) => {
     return res.status(403).json({ error: '禁止访问内网地址' });
   }
 
+  if (thumbPx > 0) {
+    fetchUrl = resizeCoverForThumb(fetchUrl, thumbPx);
+  }
+
   try {
     const headers = {};
     const range = String(req.headers.range || '').trim();
     if (range) headers.Range = range;
 
-    const response = await fetchWithTimeout(raw, { headers, redirect: 'follow' }, 20000);
+    const response = await fetchWithTimeout(fetchUrl, { headers, redirect: 'follow' }, 20000);
     if (!response.ok) {
       return res.status(response.status).json({ error: '上游媒体请求失败' });
     }
@@ -738,6 +748,51 @@ app.get('/api/rooms/:id', (req, res) => {
   const room = getRoomPublic(req.params.id);
   if (!room) return res.status(404).json({ error: '房间不存在' });
   res.json(room);
+});
+
+app.get('/api/chat/upload-config', (_req, res) => {
+  res.json({ enabled: isQiniuConfigured() });
+});
+
+app.post('/api/chat/upload-token', (req, res) => {
+  if (!isQiniuConfigured()) {
+    return res.status(503).json({ error: '图片上传未配置' });
+  }
+
+  if (!limitProxyRequest(`chat-upload:${getRequestIp(req)}`)) {
+    return res.status(429).json({ error: '请求过于频繁，请稍后再试' });
+  }
+
+  const roomId = limitText(req.body?.roomId, 32);
+  const ext = limitText(req.body?.ext, 8).toLowerCase();
+  if (!roomId) {
+    return res.status(400).json({ error: '房间无效' });
+  }
+
+  const identity = resolveIdentityFromRequest(req);
+  if (!identity?.userId) {
+    return res.status(401).json({ error: '未登录' });
+  }
+
+  const room = getRoomInternal(roomId);
+  if (!room) {
+    return res.status(404).json({ error: '房间不存在' });
+  }
+
+  if (!room.users.has(identity.userId)) {
+    return res.status(403).json({ error: '未加入房间' });
+  }
+
+  if (room.muteAll || room.mutedUserIds?.has(identity.userId)) {
+    return res.status(403).json({ error: room.muteAll ? '当前房间已全体禁言' : '你已被禁言' });
+  }
+
+  try {
+    const tokenData = createChatImageUploadToken(roomId, ext);
+    res.json(tokenData);
+  } catch (err) {
+    res.status(400).json({ error: err.message || '生成上传凭证失败' });
+  }
 });
 
 const clientDist = path.join(__dirname, '../client/dist');
@@ -1527,7 +1582,7 @@ io.on('connection', (socket) => {
     callback?.({ success: true, room: result.room });
   });
 
-  socket.on('send_chat', ({ text, mentions, replyTo }, callback) => {
+  socket.on('send_chat', ({ text, mentions, replyTo, imageUrl, imageKey }, callback) => {
     if (rejectReadOnly(socket, callback)) return;
     if (rejectRateLimited(socket, limitSocketChat, 'send_chat', callback)) return;
 
@@ -1537,7 +1592,12 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const result = addChatMessage(roomId, getSocketUserId(socket), text, { mentions, replyTo });
+    const result = addChatMessage(roomId, getSocketUserId(socket), text, {
+      mentions,
+      replyTo,
+      imageUrl,
+      imageKey,
+    });
     if (result.error) {
       callback?.({ success: false, error: result.error });
       return;

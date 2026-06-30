@@ -142,8 +142,9 @@ export function getCoverUrl(
   size: CoverSize = 'full',
 ): string {
   const source = song.source || 'netease';
-  const raw = toProxiedMediaUrl(getProvider(source).getCoverUrl({ ...song, source }));
-  return resizeCoverUrl(raw, size);
+  const raw = getProvider(source).getCoverUrl({ ...song, source });
+  const proxied = toProxiedMediaUrl(raw);
+  return resizeCoverUrl(proxied, size);
 }
 
 export type { CoverSize } from '../../lib/coverUrl';

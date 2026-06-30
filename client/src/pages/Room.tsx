@@ -11,7 +11,7 @@ import { normalizeFmMode } from '../api/music/fmMode';
 import { addSongsToQueue, formatBulkAddToast } from '../lib/addSongsToQueue';
 import { rememberPlaylistImportHistory } from '../components/PlaylistImportModal';
 
-import type { FavoriteSong, MusicSource, RoomMemberSettings, RoomMemberTier, SearchResult, Song, SongHistoryItem } from '../types';
+import type { FavoriteSong, MusicSource, RoomAudioQuality, RoomMemberSettings, RoomMemberTier, SearchResult, Song, SongHistoryItem } from '../types';
 
 import type { MusicProviderMeta } from '../api/music/types';
 
@@ -63,6 +63,10 @@ import RoomFmModeModal from '../components/RoomFmModeModal';
 import RoomAnnouncementModal from '../components/RoomAnnouncementModal';
 import RoomAnnouncementPopup from '../components/RoomAnnouncementPopup';
 import RoomMemberModal from '../components/RoomMemberModal';
+import RoomQualityModal from '../components/RoomQualityModal';
+import RoomQualityBadge from '../components/RoomQualityBadge';
+import { resolveEffectiveAudioQuality, useUserQualityStore } from '../stores/userQualityStore';
+import { clearSongUrlCache } from '../lib/songPreloadCache';
 import { DEFAULT_MEMBER_SETTINGS } from '../lib/memberTierPresets';
 import { canRequestSong } from '../lib/roomPermissions';
 import { markAnnouncementSeen, shouldAutoShowAnnouncement } from '../lib/announcementSeen';
@@ -272,6 +276,7 @@ export default function Room() {
   const [announcementSaving, setAnnouncementSaving] = useState(false);
   const [announcementPopupOpen, setAnnouncementPopupOpen] = useState(false);
   const [memberOpen, setMemberOpen] = useState(false);
+  const [qualityOpen, setQualityOpen] = useState(false);
   const [memberSaving, setMemberSaving] = useState(false);
   const [songRequestSaving, setSongRequestSaving] = useState(false);
   const songHistoryItems = useSongHistoryStore((s) => s.songs);
@@ -921,6 +926,12 @@ export default function Room() {
     }
   }, [memberSaving, setRoomMemberSettings, showToast]);
 
+  const handleSaveUserQuality = useCallback((quality: RoomAudioQuality) => {
+    useUserQualityStore.getState().setQuality(quality);
+    clearSongUrlCache();
+    showToast('音质已更新，正在切换…', 'success');
+  }, [showToast]);
+
   const handleAssignMemberTier = useCallback(async (userId: string, tier: Omit<RoomMemberTier, 'userId' | 'assignedAt'>) => {
     if (memberSaving) return;
     setMemberSaving(true);
@@ -989,14 +1000,21 @@ export default function Room() {
     }
   };
 
-  const ambientGlassClass = roomAmbientGlassClass(visualMode);
+  const displayVisualMode: RoomVisualMode = isLgUp ? visualMode : 'galaxy';
+  const ambientGlassClass = roomAmbientGlassClass(displayVisualMode);
 
   const handleVisualModeChange = (mode: RoomVisualMode) => {
+    if (!isLgUp) return;
     setVisualMode(mode);
     writeRoomVisualMode(mode);
   };
 
+  useEffect(() => {
+    if (!isLgUp) setVisualFxOpen(false);
+  }, [isLgUp]);
+
   const patchVisualFx = (patch: Partial<RoomVisualFxSettings>) => {
+    if (!isLgUp) return;
     const next = patchRoomVisualFx(patch);
     setVisualFx(next);
   };
@@ -1292,7 +1310,7 @@ export default function Room() {
 
       <RoomAmbientBackground
         song={room.current}
-        visualMode={visualMode}
+        visualMode={displayVisualMode}
         isPlaying={Boolean(room.isPlaying)}
       />
 
@@ -1344,6 +1362,13 @@ export default function Room() {
         onSaveSettings={handleSaveMemberSettings}
         onSaveTier={handleAssignMemberTier}
         onRemoveTier={handleRemoveMemberTier}
+      />
+
+      <RoomQualityModal
+        open={qualityOpen}
+        value={resolveEffectiveAudioQuality(room?.audioQuality)}
+        onClose={() => setQualityOpen(false)}
+        onSave={handleSaveUserQuality}
       />
 
       <RoomAnnouncementPopup
@@ -1494,6 +1519,7 @@ export default function Room() {
 
               <div className="mt-0.5 flex flex-wrap items-center gap-2">
                 <p className="text-xs text-netease-muted">{room.userCount} 人在线</p>
+                <RoomQualityBadge onClick={() => setQualityOpen(true)} />
                 <RoomFmModeBadge fmMode={room.neteaseFmMode} />
                 {room.songRequestEnabled === false && (
                   <span className="text-[10px] text-amber-400/90 bg-amber-400/10 px-1.5 py-0.5 rounded-full">禁止点歌</span>
@@ -1528,7 +1554,7 @@ export default function Room() {
 
             <div className="flex items-center gap-1 sm:gap-2">
 
-              {ROOM_VISUAL_MODE_META[visualMode].hasSettings ? (
+              {isLgUp && ROOM_VISUAL_MODE_META[visualMode].hasSettings ? (
                 <Tooltip side="bottom" content="视觉参数">
                   <button
                     type="button"
@@ -1541,7 +1567,9 @@ export default function Room() {
                 </Tooltip>
               ) : null}
 
-              <RoomVisualPresetSelect value={visualMode} onChange={handleVisualModeChange} />
+              {isLgUp ? (
+                <RoomVisualPresetSelect value={visualMode} onChange={handleVisualModeChange} />
+              ) : null}
 
               <Tooltip side="bottom" content="分享房间">
                 <button

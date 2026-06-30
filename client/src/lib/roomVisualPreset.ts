@@ -1,3 +1,5 @@
+import { isMobileDevice } from './audioUnlock';
+
 const MODE_KEY = 'openmusic:room-visual-mode';
 const FX_KEY = 'openmusic:room-visual-fx';
 
@@ -137,7 +139,7 @@ export function readRoomVisualMode(): RoomVisualMode {
   } catch {
     // ignore
   }
-  return 'cover-bg';
+  return isMobileDevice() ? 'galaxy' : 'cover-bg';
 }
 
 export function writeRoomVisualMode(mode: RoomVisualMode): void {

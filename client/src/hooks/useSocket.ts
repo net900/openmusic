@@ -630,7 +630,12 @@ if (s.connected) {
 
   const sendChat = useCallback((
     text: string,
-    options: { mentions?: ChatMention[]; replyTo?: ChatReplyRef | null } = {},
+    options: {
+      mentions?: ChatMention[];
+      replyTo?: ChatReplyRef | null;
+      imageUrl?: string;
+      imageKey?: string;
+    } = {},
   ): Promise<{ success: boolean; error?: string }> => {
     return emitWithAck('send_chat', { text, ...options }, { success: false, error: '连接超时，请重试' });
 

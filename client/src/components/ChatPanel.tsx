@@ -1,6 +1,6 @@
-import { useMemo, useState, useRef, useEffect } from 'react';
+import { useMemo, useState, useRef, useEffect, type ChangeEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, MessageCircle, MicOff, Reply, Send, Smile, X } from 'lucide-react';
+import { ChevronDown, ImagePlus, MessageCircle, MicOff, Reply, Send, Smile, X } from 'lucide-react';
 import { useRoomStore } from '../stores/roomStore';
 import { useChatStore } from '../stores/chatStore';
 import { getClientId } from '../lib/clientId';
@@ -13,6 +13,7 @@ import Tooltip from './Tooltip';
 import MemberTierBadge from './MemberTierBadge';
 import { fireWelcomeConfetti } from '../lib/confettiBurst';
 import { ChatMessageReactions, ChatReactionPicker } from './ChatMessageReactions';
+import ChatImageLightbox from './ChatImageLightbox';
 import {
   ensureQQFacesLoaded,
   getInitialQQFaces,
@@ -24,6 +25,8 @@ import {
   subscribeQQFaces,
   type QFaceItem,
 } from '../lib/qface';
+import { fetchChatUploadEnabled, uploadChatImage } from '../api/chatImage';
+import { readClipboardImageFile } from '../lib/compressChatImage';
 
 const MAX_CHAT_LENGTH = 500;
 
@@ -62,8 +65,11 @@ function formatChatTime(timestamp: number): string {
   }
 }
 
-function compactReplyText(text: string) {
-  return text.replace(/\s+/g, ' ').slice(0, 48);
+function compactReplyText(text: string, imageUrl?: string | null) {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (normalized) return normalized.slice(0, 48);
+  if (imageUrl) return '[图片]';
+  return '';
 }
 
 function escapeRegExp(value: string) {
@@ -123,7 +129,12 @@ export default function ChatPanel() {
   const [chatScrollRoot, setChatScrollRoot] = useState<HTMLDivElement | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [emojiGridRoot, setEmojiGridRoot] = useState<HTMLDivElement | null>(null);
+  const [chatUploadEnabled, setChatUploadEnabled] = useState(false);
+  const [pendingImage, setPendingImage] = useState<{ url: string; key: string; previewUrl: string } | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const inputRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const emojiPanelRef = useRef<HTMLDivElement>(null);
   const chatPanelRef = useRef<HTMLDivElement>(null);
   const chatOverlayHostRef = useRef<HTMLDivElement>(null);
@@ -156,7 +167,7 @@ export default function ChatPanel() {
       const reactions = (m.reactions || [])
         .map((r) => `${r.emoji}:${r.users.length}`)
         .join(',');
-      return `${m.id}:${reactions}`;
+      return `${m.id}:${m.imageUrl || ''}:${reactions}`;
     }).join('|'),
     [messages],
   );
@@ -214,6 +225,10 @@ export default function ChatPanel() {
       stickToBottomRef.current = true;
       setShowScrollToBottom(false);
       setReplyTo(null);
+      setPendingImage((current) => {
+        if (current?.previewUrl) URL.revokeObjectURL(current.previewUrl);
+        return null;
+      });
       setShowMentionPicker(false);
       setMentionQuery('');
       mentionQueryRef.current = '';
@@ -223,6 +238,10 @@ export default function ChatPanel() {
       welcomeConfettiCooldownRef.current.clear();
     }
   }, [room?.id]);
+
+  useEffect(() => {
+    void fetchChatUploadEnabled().then(setChatUploadEnabled);
+  }, []);
 
   useEffect(() => {
     const container = chatConfettiRootRef.current;
@@ -349,7 +368,7 @@ export default function ChatPanel() {
       const notify = () => {
         if (Notification.permission !== 'granted') return;
         const notification = new Notification(`${msg.nickname} 提到了你`, {
-          body: compactReplyText(msg.text),
+          body: compactReplyText(msg.text, msg.imageUrl),
           tag: `openmusic-mention-${room.id}-${msg.id}`,
           silent: false,
         });
@@ -537,9 +556,47 @@ export default function ChatPanel() {
     el.scrollTo({ top: el.scrollHeight, behavior });
   };
 
+  const clearPendingImage = () => {
+    setPendingImage((current) => {
+      if (current?.previewUrl) URL.revokeObjectURL(current.previewUrl);
+      return null;
+    });
+    if (imageInputRef.current) imageInputRef.current.value = '';
+  };
+
+  const submitChatImage = async (file: File) => {
+    if (!room?.id || chatMuted || uploadingImage) return;
+
+    setError('');
+    setUploadingImage(true);
+    try {
+      const uploaded = await uploadChatImage(room.id, file);
+      setPendingImage((current) => {
+        if (current?.previewUrl) URL.revokeObjectURL(current.previewUrl);
+        return {
+          url: uploaded.url,
+          key: uploaded.key,
+          previewUrl: uploaded.previewUrl,
+        };
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '图片上传失败');
+    } finally {
+      setUploadingImage(false);
+      if (imageInputRef.current) imageInputRef.current.value = '';
+    }
+  };
+
+  const handleImagePick = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    await submitChatImage(file);
+  };
+
   const handleSend = async () => {
     const messageText = serializeEditor().trim();
-    if (!messageText || sending) return;
+    const currentImage = pendingImage;
+    if ((!messageText && !currentImage) || sending) return;
 
     const mentions = buildMentions(messageText);
     const currentReplyTo = replyTo;
@@ -547,20 +604,38 @@ export default function ChatPanel() {
     stickToBottomRef.current = true;
     clearEditor();
     setReplyTo(null);
+    clearPendingImage();
     setSending(true);
     setError('');
 
-    const res = await sendChat(messageText, { mentions, replyTo: currentReplyTo });
+    const res = await sendChat(messageText, {
+      mentions,
+      replyTo: currentReplyTo,
+      imageUrl: currentImage?.url,
+      imageKey: currentImage?.key,
+    });
     if (!res.success) {
       insertPlainText(messageText);
       setReplyTo(currentReplyTo);
+      if (currentImage) {
+        setPendingImage({
+          url: currentImage.url,
+          key: currentImage.key,
+          previewUrl: currentImage.previewUrl,
+        });
+      }
       setError(res.error || '发送失败');
     }
     setSending(false);
   };
 
   const handleReply = (msg: ChatMessage) => {
-    setReplyTo({ id: msg.id, userId: msg.userId, nickname: msg.nickname, text: compactReplyText(msg.text) });
+    setReplyTo({
+      id: msg.id,
+      userId: msg.userId,
+      nickname: msg.nickname,
+      text: compactReplyText(msg.text, msg.imageUrl),
+    });
     const isSelf = msg.userId === mySocketId || msg.nickname === nickname;
     if (!isSelf) {
       applyReplyMention(msg.nickname);
@@ -853,6 +928,7 @@ export default function ChatPanel() {
           const isRoomCreator = msg.userId === room.creatorId;
           const userMemberTier = room.memberTiers?.[msg.userId];
           const user = userMap.get(msg.userId);
+          const isImageOnly = Boolean(msg.imageUrl && !msg.text);
           return (
             <div key={msg.id} className={`group flex flex-col ${isMe ? 'items-end' : 'items-start'}`} onContextMenu={(event) => { event.preventDefault(); handleReply(msg); }}>
               <div className={`mb-0.5 flex items-center gap-1.5 ${isMe ? 'flex-row-reverse' : ''}`}>
@@ -873,14 +949,31 @@ export default function ChatPanel() {
               </div>
               <div className={`flex max-w-[90%] items-start gap-1.5 ${isMe ? 'flex-row-reverse justify-end' : ''}`}>
                 <div className={`min-w-0 ${isMe ? 'items-end' : 'items-start'} flex flex-col`}>
-                  <div className={`rounded-2xl px-3 py-1.5 text-sm leading-7 break-words ${isMe ? 'rounded-br-md bg-netease-red/20 text-white' : 'rounded-bl-md bg-netease-dark/80 text-white/90'}`}>
+                  <div className={`rounded-2xl text-sm leading-7 break-words ${isImageOnly ? 'p-1' : 'px-3 py-1.5'} ${isMe ? 'rounded-br-md bg-netease-red/20 text-white' : 'rounded-bl-md bg-netease-dark/80 text-white/90'}`}>
                     {msg.replyTo && (
-                      <div className="mb-1 rounded-lg border-l-2 border-white/20 bg-black/20 px-2 py-1 text-xs leading-5 text-netease-muted">
+                      <div className={`mb-1 rounded-lg border-l-2 border-white/20 bg-black/20 text-xs leading-5 text-netease-muted ${isImageOnly ? 'mx-1 mt-1 px-2 py-1' : 'px-2 py-1'}`}>
                         <span>回复 {msg.replyTo.nickname}：</span>
                         {renderMessageText(msg.replyTo.text, 'reply')}
                       </div>
                     )}
-                    {renderMessageText(msg.text)}
+                    {msg.imageUrl && (
+                      <Tooltip content="点击查看大图">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewImageUrl(msg.imageUrl!)}
+                          className={`block cursor-zoom-in overflow-hidden rounded-lg ${msg.text ? 'mb-1' : ''}`}
+                          aria-label="查看聊天图片"
+                        >
+                          <img
+                            src={msg.imageUrl}
+                            alt="聊天图片"
+                            loading="lazy"
+                            className="max-h-40 max-w-[220px] object-contain"
+                          />
+                        </button>
+                      </Tooltip>
+                    )}
+                    {msg.text ? renderMessageText(msg.text) : null}
                   </div>
                   <ChatMessageReactions
                     reactions={msg.reactions}
@@ -978,7 +1071,41 @@ export default function ChatPanel() {
           </div>
         )}
         {error && <p className="mb-1 text-xs text-netease-red">{error}</p>}
+        {pendingImage && (
+          <div className="mb-1.5 flex items-center gap-2 rounded-xl bg-white/5 px-2 py-1.5">
+            <button
+              type="button"
+              onClick={() => setPreviewImageUrl(pendingImage.previewUrl)}
+              className="flex-shrink-0 cursor-zoom-in overflow-hidden rounded-lg"
+              aria-label="预览待发送图片"
+            >
+              <img
+                src={pendingImage.previewUrl}
+                alt="待发送图片"
+                className="h-14 w-14 object-cover"
+              />
+            </button>
+            <span className="min-w-0 flex-1 truncate text-xs text-netease-muted">
+              {uploadingImage ? '正在压缩并上传…' : '已选择图片，可附带文字后发送'}
+            </span>
+            <button
+              type="button"
+              onClick={clearPendingImage}
+              className="rounded p-0.5 text-netease-muted hover:bg-white/10 hover:text-white"
+              aria-label="移除图片"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
         <div className="relative flex items-center gap-2" ref={emojiPanelRef}>
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            className="hidden"
+            onChange={(event) => { void handleImagePick(event); }}
+          />
           {showEmoji && !isMobileLayout && (
             <div className="absolute bottom-full left-0 z-20 mb-2 box-border w-full max-w-full rounded-2xl border border-netease-border/70 bg-netease-dark/95 p-2 shadow-2xl backdrop-blur">
               {renderEmojiPickerContent('grid max-h-64 grid-cols-8 gap-0.5 overflow-y-auto overscroll-contain px-0.5 py-0.5')}
@@ -995,6 +1122,19 @@ export default function ChatPanel() {
               <Smile className="h-4 w-4" />
             </button>
           </Tooltip>
+          {chatUploadEnabled && (
+            <Tooltip content="发送图片（支持粘贴截图）">
+              <button
+                type="button"
+                onClick={() => imageInputRef.current?.click()}
+                disabled={chatMuted || uploadingImage || sending}
+                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-netease-border/50 bg-netease-dark text-netease-muted transition-colors hover:bg-white/5 hover:text-white disabled:opacity-40"
+                aria-label="发送图片"
+              >
+                <ImagePlus className="h-4 w-4" />
+              </button>
+            </Tooltip>
+          )}
           <div className="relative min-w-0 flex-1">
             {showMentionPicker && (
               <div className="absolute bottom-full left-0 z-20 mb-2 w-56 overflow-hidden rounded-2xl border border-netease-border/70 bg-netease-dark/95 p-1.5 shadow-2xl backdrop-blur">
@@ -1046,6 +1186,15 @@ export default function ChatPanel() {
               }}
               onInput={syncEditorState}
               onPaste={(event) => {
+                if (chatUploadEnabled && !chatMuted && !uploadingImage) {
+                  const clipboardFile = readClipboardImageFile(event.clipboardData);
+                  if (clipboardFile) {
+                    event.preventDefault();
+                    void submitChatImage(clipboardFile);
+                    return;
+                  }
+                }
+
                 event.preventDefault();
                 const remaining = MAX_CHAT_LENGTH - serializeEditor().length + getSelectedTextLength();
                 if (remaining <= 0) return setError(`消息最多 ${MAX_CHAT_LENGTH} 字`);
@@ -1083,7 +1232,13 @@ export default function ChatPanel() {
               className={`h-9 overflow-x-auto overflow-y-hidden whitespace-nowrap rounded-xl border border-netease-border/50 bg-netease-dark px-3 py-1.5 text-sm leading-6 text-white focus:border-netease-red/40 focus:outline-none ${chatMuted ? 'opacity-50 pointer-events-none' : ''}`}
             />
           </div>
-          <button onClick={handleSend} disabled={sending || !text.trim() || chatMuted} className="rounded-xl bg-netease-red px-3 py-1.5 text-white transition-colors hover:bg-red-500 disabled:opacity-40"><Send className="h-4 w-4" /></button>
+          <button
+            onClick={() => { void handleSend(); }}
+            disabled={sending || uploadingImage || (!text.trim() && !pendingImage) || chatMuted}
+            className="rounded-xl bg-netease-red px-3 py-1.5 text-white transition-colors hover:bg-red-500 disabled:opacity-40"
+          >
+            <Send className="h-4 w-4" />
+          </button>
         </div>
       </div>
 
@@ -1091,6 +1246,11 @@ export default function ChatPanel() {
 
       {desktopMutePickerPortal && createPortal(desktopMutePickerPortal, chatPanelRef.current!)}
       {mobileMutePickerPortal && createPortal(mobileMutePickerPortal, document.body)}
+
+      <ChatImageLightbox
+        imageUrl={previewImageUrl}
+        onClose={() => setPreviewImageUrl(null)}
+      />
     </div>
   );
 }

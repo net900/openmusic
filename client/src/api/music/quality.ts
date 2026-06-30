@@ -1,5 +1,6 @@
 import type { MusicSource, RoomAudioQuality } from '../../types';
 import { useRoomStore } from '../../stores/roomStore';
+import { resolveEffectiveAudioQuality } from '../../stores/userQualityStore';
 
 export type NeteaseQuality = 'standard' | 'exhigh' | 'lossless' | 'higher' | 'hires' | '128' | '320' | 'flac';
 export type TencentQuality = 'standard' | 'exhigh' | 'lossless' | '128' | '320' | 'flac';
@@ -65,7 +66,7 @@ export function normalizeRoomAudioQuality(
 
 export function getRoomPlaybackQuality(source: MusicSource): string | undefined {
   const room = useRoomStore.getState().room;
-  const quality = normalizeRoomAudioQuality(room?.audioQuality);
+  const quality = resolveEffectiveAudioQuality(room?.audioQuality);
   if (source === 'netease') return quality.netease;
   if (source === 'tencent') return quality.tencent;
   return undefined;

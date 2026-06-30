@@ -1,7 +1,7 @@
 export type CoverSize = 'tiny' | 'thumb' | 'medium' | 'full';
 
 export const COVER_SIZE_PX: Record<Exclude<CoverSize, 'full'>, number> = {
-  tiny: 64,
+  tiny: 48,
   thumb: 96,
   medium: 320,
 };
@@ -36,14 +36,9 @@ function resizeMediaProxyUrl(url: string, px: number): string {
   if (queryStart < 0) return url;
 
   const params = new URLSearchParams(url.slice(queryStart + 1));
-  const raw = params.get('url');
-  if (!raw) return url;
+  if (!params.get('url')) return url;
 
-  const inner = decodeURIComponent(raw);
-  const resized = resizeDirectCoverUrl(inner, px);
-  if (resized === inner) return url;
-
-  params.set('url', resized);
+  params.set('size', String(px));
   return `${url.slice(0, queryStart)}?${params.toString()}`;
 }
 
