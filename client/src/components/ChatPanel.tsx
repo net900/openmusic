@@ -154,8 +154,10 @@ export default function ChatPanel() {
   const scrollBottomRafRef = useRef<number | null>(null);
   const welcomeConfettiIdsRef = useRef(new Set<string>());
   const welcomeConfettiCooldownRef = useRef(new Map<string, number>());
+  const welcomeConfettiSessionStartRef = useRef(Date.now());
   const chatConfettiRootRef = useRef<HTMLDivElement | null>(null);
   const WELCOME_CONFETTI_COOLDOWN_MS = 5 * 60 * 1000;
+  const WELCOME_CONFETTI_LIVE_GRACE_MS = 2500;
 
   reactionPickerOpenRef.current = reactionPickerMessageId !== null;
 
@@ -237,6 +239,7 @@ export default function ChatPanel() {
       notifiedMessageIdsRef.current.clear();
       welcomeConfettiIdsRef.current.clear();
       welcomeConfettiCooldownRef.current.clear();
+      welcomeConfettiSessionStartRef.current = Date.now();
     }
   }, [room?.id]);
 
@@ -251,6 +254,9 @@ export default function ChatPanel() {
     for (const msg of messages) {
       if (msg.kind !== 'welcome' || welcomeConfettiIdsRef.current.has(msg.id)) continue;
       welcomeConfettiIdsRef.current.add(msg.id);
+
+      // 刷新/重进房会加载历史欢迎消息，仅对本次会话内新产生的欢迎喷礼花
+      if (msg.timestamp < welcomeConfettiSessionStartRef.current - WELCOME_CONFETTI_LIVE_GRACE_MS) continue;
 
       const targetId = msg.targetUserId || msg.id;
       const lastAt = welcomeConfettiCooldownRef.current.get(targetId) || 0;

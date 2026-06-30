@@ -32,10 +32,10 @@ export default function RoleBadge({ role, className = '' }: Props) {
     >
       <span className="role-badge-content">
         <Shield
-          className="h-3 w-3 flex-shrink-0 text-sky-200 drop-shadow-[0_0_5px_rgba(56,189,248,0.75)]"
+          className="h-3 w-3 flex-shrink-0 text-sky-300 drop-shadow-[0_0_4px_rgba(56,189,248,0.55)]"
           strokeWidth={2.25}
           fill="currentColor"
-          fillOpacity={0.28}
+          fillOpacity={0.3}
         />
         管理
       </span>

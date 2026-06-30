@@ -375,18 +375,18 @@ body {
 .member-badge-shine::after {
   content: '';
   position: absolute;
-  top: -70%;
-  left: -20%;
-  width: 38%;
-  height: 240%;
+  top: 0;
+  left: 0;
+  width: 50%;
+  height: 100%;
+  border-radius: inherit;
   background: linear-gradient(
     90deg,
     transparent 0%,
     rgba(255, 255, 255, 0.32) 50%,
     transparent 100%
   );
-  transform: rotate(45deg) translateX(-220%);
-  transform-origin: center center;
+  transform: translateX(-100%);
   animation: member-badge-shine-sweep 3s ease-in-out infinite;
   pointer-events: none;
   opacity: 0.55;
@@ -395,10 +395,10 @@ body {
 
 @keyframes member-badge-shine-sweep {
   0% {
-    transform: rotate(45deg) translateX(-220%);
+    transform: translateX(-100%);
   }
   100% {
-    transform: rotate(45deg) translateX(420%);
+    transform: translateX(300%);
   }
 }
 
@@ -432,16 +432,22 @@ body {
 }
 
 .role-badge-admin {
-  background: linear-gradient(145deg, rgba(8, 58, 88, 0.55) 0%, rgba(6, 42, 68, 0.42) 55%, rgba(4, 28, 48, 0.5) 100%);
-  border: 1px solid rgba(125, 211, 252, 0.68);
-  color: #e0f2fe;
+  background: linear-gradient(
+    145deg,
+    rgba(14, 116, 178, 0.34) 0%,
+    rgba(56, 189, 248, 0.16) 50%,
+    rgba(12, 74, 110, 0.3) 100%
+  );
+  border: 1px solid rgba(56, 189, 248, 0.52);
+  color: #7dd3fc;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   box-shadow:
-    0 0 0 1px rgba(56, 189, 248, 0.2),
-    0 0 18px rgba(56, 189, 248, 0.36),
-    0 2px 8px rgba(0, 0, 0, 0.26),
-    inset 0 1px 0 rgba(255, 255, 255, 0.28),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
-  text-shadow: 0 0 10px rgba(56, 189, 248, 0.65), 0 1px 2px rgba(0, 0, 0, 0.32);
+    0 0 0 1px rgba(56, 189, 248, 0.12),
+    0 0 12px rgba(56, 189, 248, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 0 10px rgba(56, 189, 248, 0.08);
+  text-shadow: 0 0 8px rgba(56, 189, 248, 0.45);
 }
 
 .role-badge-admin::before {
@@ -449,7 +455,7 @@ body {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(145deg, rgba(186, 230, 253, 0.2) 0%, transparent 42%, rgba(56, 189, 248, 0.06) 100%);
+  background: linear-gradient(145deg, rgba(186, 230, 253, 0.1) 0%, transparent 46%, rgba(14, 165, 233, 0.06) 100%);
   pointer-events: none;
 }
 

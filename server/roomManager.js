@@ -808,6 +808,9 @@ export function setRoomAdmin(roomId, actorId, targetUserId, admin = true, connec
     if (admins.size >= MAX_ADMINS) return { error: '管理员最多 3 人' };
     admins.add(targetUserId);
     ensureAutoPromotedAdminIds(room).delete(targetUserId);
+    if (room.memberTiers?.has(targetUserId)) {
+      room.memberTiers.delete(targetUserId);
+    }
   } else {
     if (!admins.has(targetUserId)) {
       return { room: serializeRoom(room) };
