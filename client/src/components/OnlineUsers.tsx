@@ -48,7 +48,7 @@ export default function OnlineUsers({ users, creatorId, memberTiers = {}, onNoti
 
   const orderedUsers = useMemo<DisplayUser[]>(() => {
     const onlineIds = new Set(visibleUsers.map((user) => user.id));
-    const offlineAdmins: DisplayUser[] = canControlPlayback
+    const offlineAdmins: DisplayUser[] = isOwner
       ? adminIds
           .filter((id) => !onlineIds.has(id) && id !== creatorId)
           .map((id) => ({
@@ -69,7 +69,7 @@ export default function OnlineUsers({ users, creatorId, memberTiers = {}, onNoti
       if (a.offline !== b.offline) return a.offline ? 1 : -1;
       return a.joinedAt - b.joinedAt;
     });
-  }, [visibleUsers, mySocketId, creatorId, adminIds, userNicknames, canControlPlayback]);
+  }, [visibleUsers, mySocketId, creatorId, adminIds, userNicknames, isOwner]);
 
   useEffect(() => {
     if (!open) return;

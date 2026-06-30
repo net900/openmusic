@@ -953,6 +953,18 @@ function isUserChatMuted(room, userId) {
   return room.mutedUserIds?.has(userId) ?? false;
 }
 
+const MENTION_ALL_LABEL = '全体成员';
+
+function hasMentionAllInText(text) {
+  return new RegExp(`@${MENTION_ALL_LABEL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\s|$)`).test(String(text || ''));
+}
+
+function buildMentionAllTargets(room, senderId) {
+  return [...room.users.values()]
+    .filter((user) => user.id !== senderId && !user.readOnly)
+    .map((user) => ({ id: user.id, nickname: user.nickname || '匿名' }));
+}
+
 export function setChatMute(roomId, actorId, options = {}, connectionId = null) {
   const room = rooms.get(roomId);
   if (!room) return { error: '房间不存在' };
@@ -1861,12 +1873,21 @@ export function addChatMessage(roomId, userId, text, options = {}) {
     return { error: room.muteAll ? '当前房间已全体禁言' : '你已被禁言' };
   }
 
+  if (hasMentionAllInText(content) && !canControlPlayback(room, userId)) {
+    return { error: '仅房主或管理员可使用 @全体成员' };
+  }
+
+  let mentions = Array.isArray(options.mentions) ? options.mentions.slice(0, 10) : [];
+  if (hasMentionAllInText(content)) {
+    mentions = buildMentionAllTargets(room, userId);
+  }
+
   const message = {
     id: generateId(),
     userId,
     nickname: user?.nickname || '匿名',
     text: content,
-    mentions: Array.isArray(options.mentions) ? options.mentions.slice(0, 10) : [],
+    mentions,
     replyTo: options.replyTo || null,
     timestamp: Date.now(),
   };

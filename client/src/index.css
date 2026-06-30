@@ -176,6 +176,57 @@ body {
     background: #fff;
     cursor: pointer;
   }
+
+  .setting-range {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    height: 1.25rem;
+    cursor: pointer;
+  }
+
+  .setting-range::-webkit-slider-runnable-track {
+    height: 0.25rem;
+    border-radius: 9999px;
+    background: linear-gradient(
+      to right,
+      #ec4141 var(--range-pct, 50%),
+      rgba(255, 255, 255, 0.12) var(--range-pct, 50%)
+    );
+  }
+
+  .setting-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 0.875rem;
+    height: 0.875rem;
+    margin-top: -0.3125rem;
+    border-radius: 9999px;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+    cursor: pointer;
+  }
+
+  .setting-range::-moz-range-track {
+    height: 0.25rem;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  .setting-range::-moz-range-progress {
+    height: 0.25rem;
+    border-radius: 9999px;
+    background: #ec4141;
+  }
+
+  .setting-range::-moz-range-thumb {
+    width: 0.875rem;
+    height: 0.875rem;
+    border: none;
+    border-radius: 9999px;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+    cursor: pointer;
+  }
 }
 
 /* 贵宾点歌边框 — 纯色描边 + 向内光晕（亮度见 memberTierPresets.ts MEMBER_FRAME_GLOW） */

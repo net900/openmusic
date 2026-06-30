@@ -82,6 +82,21 @@ function hasMentionInText(messageText: string, targetNickname: string) {
   return new RegExp(`@${escapeRegExp(targetNickname)}(?:\\s|$)`).test(messageText);
 }
 
+const MENTION_ALL_LABEL = '全体成员';
+
+function hasMentionAllInText(messageText: string) {
+  return new RegExp(`@${escapeRegExp(MENTION_ALL_LABEL)}(?:\\s|$)`).test(messageText);
+}
+
+function matchesMentionAllQuery(query: string) {
+  const normalized = query.trim().toLowerCase();
+  return !normalized || MENTION_ALL_LABEL.startsWith(normalized);
+}
+
+type MentionOption =
+  | { type: 'all' }
+  | { type: 'user'; user: RoomUser };
+
 const MENTION_TOKEN_RE = /(@[^\s@]{1,24})(?=\s|$)/g;
 
 export default function ChatPanel() {
@@ -172,14 +187,25 @@ export default function ChatPanel() {
 
   const userMap = useMemo(() => new Map((room?.users || []).map((user) => [user.id, user])), [room?.users]);
   const [mentionQuery, setMentionQuery] = useState('');
-  const mentionUsers = useMemo(() => {
+  const mentionOptions = useMemo<MentionOption[]>(() => {
     const myUserId = mySocketId || getClientId();
     const query = mentionQuery.trim().toLowerCase();
-    return (room?.users || [])
+    const options: MentionOption[] = [];
+
+    if (canControlPlayback && matchesMentionAllQuery(query)) {
+      options.push({ type: 'all' });
+    }
+
+    const userLimit = options.length > 0 ? 7 : 8;
+    const users = (room?.users || [])
       .filter((user) => user.id !== myUserId)
+      .filter((user) => !user.readOnly)
       .filter((user) => !query || user.nickname.toLowerCase().includes(query))
-      .slice(0, 8);
-  }, [mentionQuery, mySocketId, room?.users]);
+      .slice(0, userLimit);
+
+    options.push(...users.map((user) => ({ type: 'user' as const, user })));
+    return options.slice(0, 8);
+  }, [mentionQuery, mySocketId, room?.users, canControlPlayback]);
 
   useEffect(() => {
     if (!room?.id) return;
@@ -316,7 +342,8 @@ export default function ChatPanel() {
       if (notifiedMessageIdsRef.current.has(msg.id) || msg.userId === myUserId) continue;
       const mentionedById = msg.mentions?.some((mention) => mention.id === myUserId);
       const mentionedByName = myName ? hasMentionInText(msg.text, myName) : false;
-      if (!mentionedById && !mentionedByName) continue;
+      const mentionedByAll = hasMentionAllInText(msg.text);
+      if (!mentionedById && !mentionedByName && !mentionedByAll) continue;
 
       notifiedMessageIdsRef.current.add(msg.id);
       const notify = () => {
@@ -423,8 +450,10 @@ export default function ChatPanel() {
     setMentionQuery(activeQuery);
     const filtered = (room?.users || [])
       .filter((user) => user.id !== (mySocketId || getClientId()))
+      .filter((user) => !user.readOnly)
       .filter((user) => !activeQuery || user.nickname.toLowerCase().includes(activeQuery.toLowerCase()));
-    setShowMentionPicker(filtered.length > 0);
+    const showAll = canControlPlayback && matchesMentionAllQuery(activeQuery);
+    setShowMentionPicker(filtered.length > 0 || showAll);
     if (queryChanged) setMentionIndex(0);
   };
 
@@ -488,6 +517,12 @@ export default function ChatPanel() {
   };
 
   const buildMentions = (messageText: string) => {
+    const myUserId = mySocketId || getClientId();
+    if (hasMentionAllInText(messageText)) {
+      return (room.users || [])
+        .filter((user) => user.id !== myUserId && !user.readOnly)
+        .map((user) => ({ id: user.id, nickname: user.nickname }));
+    }
     return room.users
       .filter((user) => hasMentionInText(messageText, user.nickname))
       .slice(0, 10)
@@ -550,10 +585,13 @@ export default function ChatPanel() {
     }
   };
 
-  const handleAt = (user: RoomUser) => {
+  const handleMentionOption = (option: MentionOption) => {
     const partialMention = getTextBeforeCursor().match(/@([^\s@]*)$/);
     if (partialMention) deleteTextBeforeCursor(partialMention[0].length);
-    insertPlainText(`@${user.nickname} `);
+    const token = option.type === 'all'
+      ? `@${MENTION_ALL_LABEL} `
+      : `@${option.user.nickname} `;
+    insertPlainText(token);
     setShowMentionPicker(false);
     setMentionQuery('');
     mentionQueryRef.current = '';
@@ -818,7 +856,7 @@ export default function ChatPanel() {
           return (
             <div key={msg.id} className={`group flex flex-col ${isMe ? 'items-end' : 'items-start'}`} onContextMenu={(event) => { event.preventDefault(); handleReply(msg); }}>
               <div className={`mb-0.5 flex items-center gap-1.5 ${isMe ? 'flex-row-reverse' : ''}`}>
-                <button type="button" onClick={() => user && handleAt(user)} className={`text-[10px] ${isMe ? 'text-netease-red/80' : 'text-netease-muted'} hover:text-sky-300`}>
+                <button type="button" onClick={() => user && handleMentionOption({ type: 'user', user })} className={`text-[10px] ${isMe ? 'text-netease-red/80' : 'text-netease-muted'} hover:text-sky-300`}>
                   {msg.nickname}{isRoomCreator && <span className="ml-1 text-amber-400/80">房主</span>}
                 </button>
                 {userMemberTier && <MemberTierBadge tier={userMemberTier} className="scale-90" />}
@@ -960,18 +998,32 @@ export default function ChatPanel() {
           <div className="relative min-w-0 flex-1">
             {showMentionPicker && (
               <div className="absolute bottom-full left-0 z-20 mb-2 w-56 overflow-hidden rounded-2xl border border-netease-border/70 bg-netease-dark/95 p-1.5 shadow-2xl backdrop-blur">
-                {mentionUsers.map((user, index) => (
-                  <button
-                    key={user.id}
-                    type="button"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onMouseEnter={() => setMentionIndex(index)}
-                    onClick={() => handleAt(user)}
-                    className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors ${index === mentionIndex ? 'bg-white/10 text-white' : 'text-white/85 hover:bg-white/10'}`}
-                  >
-                    <span className="min-w-0 truncate">{user.nickname}</span>
-                    {user.id === room.creatorId && <span className="ml-2 flex-shrink-0 text-[10px] text-amber-400/80">房主</span>}
-                  </button>
+                {mentionOptions.map((option, index) => (
+                  option.type === 'all' ? (
+                    <button
+                      key="mention-all"
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onMouseEnter={() => setMentionIndex(index)}
+                      onClick={() => handleMentionOption(option)}
+                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors ${index === mentionIndex ? 'bg-white/10 text-white' : 'text-white/85 hover:bg-white/10'}`}
+                    >
+                      <span className="min-w-0 truncate text-sky-300">@{MENTION_ALL_LABEL}</span>
+                      <span className="ml-2 flex-shrink-0 text-[10px] text-sky-400/80">全员</span>
+                    </button>
+                  ) : (
+                    <button
+                      key={option.user.id}
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onMouseEnter={() => setMentionIndex(index)}
+                      onClick={() => handleMentionOption(option)}
+                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors ${index === mentionIndex ? 'bg-white/10 text-white' : 'text-white/85 hover:bg-white/10'}`}
+                    >
+                      <span className="min-w-0 truncate">{option.user.nickname}</span>
+                      {option.user.id === room.creatorId && <span className="ml-2 flex-shrink-0 text-[10px] text-amber-400/80">房主</span>}
+                    </button>
+                  )
                 ))}
               </div>
             )}
@@ -1007,14 +1059,14 @@ export default function ChatPanel() {
                   event.preventDefault();
                   setMentionIndex((current) => {
                     const delta = event.key === 'ArrowDown' ? 1 : -1;
-                    return (current + delta + mentionUsers.length) % mentionUsers.length;
+                    return (current + delta + mentionOptions.length) % mentionOptions.length;
                   });
                   return;
                 }
                 if (showMentionPicker && (event.key === 'Tab' || event.key === 'Enter')) {
                   event.preventDefault();
-                  const user = mentionUsers[mentionIndex];
-                  if (user) handleAt(user);
+                  const option = mentionOptions[mentionIndex];
+                  if (option) handleMentionOption(option);
                   return;
                 }
                 if (event.key === 'Escape' && showMentionPicker) {
