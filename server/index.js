@@ -39,6 +39,8 @@ import {
   setRoomFmMode,
   setRoomAnnouncement,
   setSongRequestEnabled,
+  banRoomSong,
+  unbanRoomSong,
   setChatMute,
   addToQueue,
   removeFromQueue,
@@ -88,6 +90,10 @@ import {
   createChatImageUploadToken,
   isQiniuConfigured,
 } from './qiniuOss.js';
+import {
+  isApihzStickerConfigured,
+  searchApihzStickers,
+} from './apihzSticker.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 4000;
@@ -827,6 +833,34 @@ app.get('/api/chat/upload-config', (_req, res) => {
   res.json({ enabled: isQiniuConfigured() });
 });
 
+app.get('/api/chat/sticker-search-config', (_req, res) => {
+  res.json({ enabled: isApihzStickerConfigured() });
+});
+
+app.get('/api/chat/sticker-search', async (req, res) => {
+  if (!isApihzStickerConfigured()) {
+    return res.status(503).json({ error: '未配置表情包搜索' });
+  }
+
+  if (!limitProxyRequest(`sticker-search:${getRequestIp(req)}`)) {
+    return res.status(429).json({ error: '请求过于频繁，请稍后再试' });
+  }
+
+  const words = limitText(req.query.words, 32);
+  const page = Math.max(1, Math.min(200, Number(req.query.page) || 1));
+  const limit = Math.max(1, Math.min(20, Number(req.query.limit) || 15));
+  if (!words) {
+    return res.status(400).json({ error: '请输入搜索关键词' });
+  }
+
+  try {
+    const result = await searchApihzStickers(words, page, limit);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message || '搜索失败' });
+  }
+});
+
 app.post('/api/chat/upload-token', (req, res) => {
   if (!isQiniuConfigured()) {
     return res.status(503).json({ error: '图片上传未配置' });
@@ -1222,7 +1256,7 @@ io.on('connection', (socket) => {
     callback?.({ success: true, room: getViewerRoomPayload(socket, roomId) });
   });
 
-  socket.on('set_room_song_request', ({ enabled, minStaySec, maxPerUser }, callback) => {
+  socket.on('set_room_song_request', ({ enabled, minStaySec, maxPerUser, cooldownSec, queueMaxLength }, callback) => {
     if (rejectReadOnly(socket, callback)) return;
     if (rejectRateLimited(socket, limitSocketAction, 'set_room_song_request', callback)) return;
 
@@ -1236,7 +1270,49 @@ io.on('connection', (socket) => {
       enabled,
       minStaySec,
       maxPerUser,
+      cooldownSec,
+      queueMaxLength,
     }, socket.id);
+    if (result.error) {
+      callback?.({ success: false, error: result.error });
+      return;
+    }
+
+    broadcastRoomUpdate(roomId);
+    callback?.({ success: true, room: getViewerRoomPayload(socket, roomId) });
+  });
+
+  socket.on('ban_room_song', ({ song }, callback) => {
+    if (rejectReadOnly(socket, callback)) return;
+    if (rejectRateLimited(socket, limitSocketAction, 'ban_room_song', callback)) return;
+
+    const roomId = socketToRoom.get(socket.id);
+    if (!roomId) {
+      callback?.({ success: false, error: '未加入房间' });
+      return;
+    }
+
+    const result = banRoomSong(roomId, getSocketUserId(socket), song);
+    if (result.error) {
+      callback?.({ success: false, error: result.error });
+      return;
+    }
+
+    broadcastRoomUpdate(roomId);
+    callback?.({ success: true, room: getViewerRoomPayload(socket, roomId) });
+  });
+
+  socket.on('unban_room_song', ({ name }, callback) => {
+    if (rejectReadOnly(socket, callback)) return;
+    if (rejectRateLimited(socket, limitSocketAction, 'unban_room_song', callback)) return;
+
+    const roomId = socketToRoom.get(socket.id);
+    if (!roomId) {
+      callback?.({ success: false, error: '未加入房间' });
+      return;
+    }
+
+    const result = unbanRoomSong(roomId, getSocketUserId(socket), name);
     if (result.error) {
       callback?.({ success: false, error: result.error });
       return;

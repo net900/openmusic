@@ -1,6 +1,6 @@
 import { useMemo, useState, useRef, useEffect, type ChangeEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, ImagePlus, MessageCircle, MicOff, Reply, Send, Smile, X } from 'lucide-react';
+import { ChevronDown, ImagePlus, MessageCircle, MicOff, Reply, Search, Send, Smile, X } from 'lucide-react';
 import { useRoomStore } from '../stores/roomStore';
 import { useChatStore } from '../stores/chatStore';
 import { getClientId } from '../lib/clientId';
@@ -16,6 +16,7 @@ import { fireWelcomeConfetti } from '../lib/confettiBurst';
 import { usePureModeStore } from '../stores/pureModeStore';
 import { ChatMessageReactions, ChatReactionPicker } from './ChatMessageReactions';
 import ChatImageLightbox from './ChatImageLightbox';
+import StickerSearchPanel, { STICKER_SEARCH_PICKER_HEIGHT } from './StickerSearchPanel';
 import {
   ensureQQFacesLoaded,
   getInitialQQFaces,
@@ -28,6 +29,7 @@ import {
   type QFaceItem,
 } from '../lib/qface';
 import { fetchChatUploadEnabled, uploadChatImage } from '../api/chatImage';
+import { fetchStickerSearchEnabled } from '../api/stickerSearch';
 import { readClipboardImageFile } from '../lib/compressChatImage';
 
 const MAX_CHAT_LENGTH = 500;
@@ -67,12 +69,15 @@ function formatChatTime(timestamp: number): string {
   }
 }
 
-function compactReplyText(text: string, imageUrl?: string | null) {
+function compactReplyText(text: string, imageUrl?: string | null, imageKey?: string | null) {
   const normalized = text.replace(/\s+/g, ' ').trim();
   if (normalized) return normalized.slice(0, 48);
-  if (imageUrl) return '[图片]';
+  if (imageUrl) return imageKey ? '[图片]' : '[表情包]';
   return '';
 }
+
+const CHAT_PHOTO_CLASS = 'max-h-40 max-w-[220px] object-contain';
+const CHAT_STICKER_CLASS = 'max-h-28 max-w-[8.5rem] rounded-xl object-contain';
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -132,9 +137,12 @@ export default function ChatPanel({ className = '' }: { className?: string }) {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [emojiGridRoot, setEmojiGridRoot] = useState<HTMLDivElement | null>(null);
   const [chatUploadEnabled, setChatUploadEnabled] = useState(false);
+  const [stickerSearchEnabled, setStickerSearchEnabled] = useState(false);
+  const [emojiPickerTab, setEmojiPickerTab] = useState<'faces' | 'search'>('faces');
   const [pendingImage, setPendingImage] = useState<{ url: string; key: string; previewUrl: string } | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const [revealedPureImages, setRevealedPureImages] = useState<Set<string>>(() => new Set());
   const inputRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const emojiPanelRef = useRef<HTMLDivElement>(null);
@@ -247,7 +255,12 @@ export default function ChatPanel({ className = '' }: { className?: string }) {
 
   useEffect(() => {
     void fetchChatUploadEnabled().then(setChatUploadEnabled);
+    void fetchStickerSearchEnabled().then(setStickerSearchEnabled);
   }, []);
+
+  useEffect(() => {
+    if (!showEmoji) setEmojiPickerTab('faces');
+  }, [showEmoji]);
 
   useEffect(() => {
     if (pureMode) return;
@@ -378,7 +391,7 @@ export default function ChatPanel({ className = '' }: { className?: string }) {
       const notify = () => {
         if (Notification.permission !== 'granted') return;
         const notification = new Notification(`${msg.nickname} 提到了你`, {
-          body: compactReplyText(msg.text, msg.imageUrl),
+          body: compactReplyText(msg.text, msg.imageUrl, msg.imageKey),
           tag: `openmusic-mention-${room.id}-${msg.id}`,
           silent: false,
         });
@@ -639,12 +652,39 @@ export default function ChatPanel({ className = '' }: { className?: string }) {
     setSending(false);
   };
 
+  const handleSendSticker = async (imageUrl: string) => {
+    if (chatMuted || sending) {
+      throw new Error(chatMuted ? '当前无法发送' : '正在发送');
+    }
+
+    const currentReplyTo = replyTo;
+
+    stickToBottomRef.current = true;
+    setReplyTo(null);
+    setSending(true);
+    setError('');
+
+    const res = await sendChat('', { imageUrl, replyTo: currentReplyTo });
+    if (!res.success) {
+      setReplyTo(currentReplyTo);
+      setError(res.error || '发送失败');
+      setSending(false);
+      throw new Error(res.error || '发送失败');
+    }
+
+    setSending(false);
+    setShowEmoji(false);
+    setEmojiPickerTab('faces');
+  };
+
   const handleReply = (msg: ChatMessage) => {
     setReplyTo({
       id: msg.id,
       userId: msg.userId,
       nickname: msg.nickname,
-      text: compactReplyText(msg.text, msg.imageUrl),
+      text: compactReplyText(msg.text, msg.imageUrl, msg.imageKey),
+      imageUrl: msg.imageUrl || null,
+      imageKey: msg.imageKey || null,
     });
     const isSelf = msg.userId === mySocketId || msg.nickname === nickname;
     if (!isSelf) {
@@ -760,37 +800,86 @@ export default function ChatPanel({ className = '' }: { className?: string }) {
     });
   };
 
-  const renderEmojiPickerContent = (gridClassName: string) => (
-    <>
-      <div className="mb-1.5 flex flex-shrink-0 items-center justify-between px-1">
-        <span className="text-[11px] text-netease-muted">QQNT 表情</span>
-        <span className="text-[11px] text-netease-muted/60">{loadingFaces ? '正在补全...' : '点击插入'}</span>
-      </div>
-      <div ref={bindEmojiGridRef} className={gridClassName}>
-        {qqFaces.map((face) => (
-          <Tooltip key={face.id} content={face.text}>
-            <button
-              type="button"
-              data-face-id={face.id}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => insertEmoji(face)}
-              className="flex h-8 items-center justify-center rounded-lg transition-colors hover:bg-white/10 active:bg-white/15"
-              aria-label={face.text}
-            >
-              <QFaceImage
-                id={face.id}
-                priority={QFaceLoadPriority.PANEL}
-                nearPriority={QFaceLoadPriority.NEAR}
-                observeRoot={emojiGridRoot}
-                className="h-6 w-auto max-w-7 object-contain"
-                placeholderClassName="h-6 w-6"
-              />
-            </button>
-          </Tooltip>
-        ))}
-      </div>
-    </>
-  );
+  const renderReplyRefContent = (reply: ChatReplyRef, alignEnd = false) => {
+    const hasText = reply.text.trim().length > 0;
+    const isSticker = Boolean(reply.imageUrl && !reply.imageKey);
+    const isPhoto = Boolean(reply.imageUrl && reply.imageKey);
+
+    return (
+      <span className={`inline-flex min-w-0 max-w-full flex-wrap items-center gap-1 ${alignEnd ? 'justify-end' : ''}`}>
+        {hasText && renderMessageText(reply.text, 'reply')}
+        {isSticker && (
+          <img
+            src={reply.imageUrl!}
+            alt="表情包"
+            loading="lazy"
+            className="max-h-8 max-w-[3.5rem] shrink-0 rounded object-contain"
+          />
+        )}
+        {isPhoto && !hasText && <span>[图片]</span>}
+      </span>
+    );
+  };
+
+  const renderEmojiPickerContent = (gridClassName: string) => {
+    if (emojiPickerTab === 'search') {
+      return (
+        <StickerSearchPanel
+          disabled={chatMuted || sending}
+          onBack={() => setEmojiPickerTab('faces')}
+          onPick={handleSendSticker}
+        />
+      );
+    }
+
+    return (
+      <>
+        <div className="mb-1.5 flex flex-shrink-0 items-center justify-between px-1">
+          <span className="text-[11px] text-netease-muted">QQNT 表情</span>
+          <div className="flex items-center gap-1.5">
+            {stickerSearchEnabled && (
+              <Tooltip content="搜索表情包">
+                <button
+                  type="button"
+                  onClick={() => setEmojiPickerTab('search')}
+                  className="rounded-lg p-1 text-netease-muted transition-colors hover:bg-white/10 hover:text-white"
+                  aria-label="搜索表情包"
+                >
+                  <Search className="h-3.5 w-3.5" />
+                </button>
+              </Tooltip>
+            )}
+            {loadingFaces && (
+              <span className="text-[11px] text-netease-muted/60">正在补全...</span>
+            )}
+          </div>
+        </div>
+        <div ref={bindEmojiGridRef} className={gridClassName}>
+          {qqFaces.map((face) => (
+            <Tooltip key={face.id} content={face.text}>
+              <button
+                type="button"
+                data-face-id={face.id}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => insertEmoji(face)}
+                className="flex h-8 items-center justify-center rounded-lg transition-colors hover:bg-white/10 active:bg-white/15"
+                aria-label={face.text}
+              >
+                <QFaceImage
+                  id={face.id}
+                  priority={QFaceLoadPriority.PANEL}
+                  nearPriority={QFaceLoadPriority.NEAR}
+                  observeRoot={emojiGridRoot}
+                  className="h-6 w-auto max-w-7 object-contain"
+                  placeholderClassName="h-6 w-6"
+                />
+              </button>
+            </Tooltip>
+          ))}
+        </div>
+      </>
+    );
+  };
 
   const mobileEmojiPickerPortal = showEmoji && isMobileLayout ? (
     <div className="fixed inset-0 z-[80]">
@@ -802,7 +891,8 @@ export default function ChatPanel({ className = '' }: { className?: string }) {
       />
       <div
         ref={emojiPickerPortalRef}
-        className="absolute inset-x-0 bottom-0 flex max-h-[min(55vh,360px)] flex-col rounded-t-2xl border-t border-netease-border/70 bg-netease-dark/98 p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] shadow-2xl backdrop-blur"
+        className={`absolute inset-x-0 bottom-0 flex flex-col rounded-t-2xl border-t border-netease-border/70 bg-netease-dark/98 p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] shadow-2xl backdrop-blur ${emojiPickerTab === 'search' ? '' : 'max-h-[min(68vh,480px)]'}`}
+        style={emojiPickerTab === 'search' ? { height: STICKER_SEARCH_PICKER_HEIGHT } : undefined}
       >
         {renderEmojiPickerContent('grid min-h-0 flex-1 grid-cols-8 gap-0.5 overflow-y-auto overscroll-contain px-0.5 py-0.5')}
       </div>
@@ -939,7 +1029,109 @@ export default function ChatPanel({ className = '' }: { className?: string }) {
           const isRoomCreator = msg.userId === room.creatorId;
           const userMemberTier = room.memberTiers?.[msg.userId];
           const user = userMap.get(msg.userId);
-          const isImageOnly = Boolean(msg.imageUrl && !msg.text && !pureMode);
+          const isStickerImage = Boolean(msg.imageUrl && !msg.imageKey);
+          const isPureImageRevealed = pureMode && Boolean(msg.imageUrl) && revealedPureImages.has(msg.id);
+          const isPureStickerHidden = pureMode && isStickerImage && !isPureImageRevealed;
+          const isPhotoOnly = Boolean(
+            msg.imageUrl && !msg.text && !isStickerImage && (!pureMode || isPureImageRevealed),
+          );
+          const bubbleClass = `min-w-0 max-w-full rounded-2xl text-sm leading-7 break-words [overflow-wrap:anywhere] ${isPhotoOnly ? 'p-1' : 'px-3 py-1.5'} ${isMe ? 'rounded-br-md bg-netease-red/20 text-white' : 'rounded-bl-md bg-netease-dark/80 text-white/90'}`;
+          const replyBubbleClass = `min-w-0 max-w-full rounded-2xl px-3 py-1.5 text-sm ${isMe ? 'rounded-br-md bg-netease-red/20 text-white' : 'rounded-bl-md bg-netease-dark/80 text-white/90'}`;
+
+          const renderReplyPreview = () => {
+            if (!msg.replyTo) return null;
+            const borderClass = isMe ? 'border-r-2 border-white/20' : 'border-l-2 border-white/20';
+            return (
+              <div className={`min-w-0 max-w-full rounded-lg bg-black/20 px-2 py-1 text-xs leading-5 text-netease-muted ${borderClass}`}>
+                <div className={`flex min-w-0 max-w-full flex-col gap-0.5 ${isMe ? 'items-end text-right' : 'items-start'}`}>
+                  <span>回复 {msg.replyTo.nickname}：</span>
+                  {renderReplyRefContent(msg.replyTo, isMe)}
+                </div>
+              </div>
+            );
+          };
+
+          const renderStickerContent = () => {
+            if (!msg.imageUrl || !isStickerImage) return null;
+            if (isPureStickerHidden) {
+              return (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRevealedPureImages((prev) => {
+                      const next = new Set(prev);
+                      next.add(msg.id);
+                      return next;
+                    });
+                  }}
+                  className="text-sky-300/90 transition-colors hover:text-sky-200"
+                  aria-label="加载表情包"
+                >
+                  表情包
+                </button>
+              );
+            }
+            return (
+              <img
+                src={msg.imageUrl}
+                alt="表情包"
+                loading="lazy"
+                className={CHAT_STICKER_CLASS}
+              />
+            );
+          };
+
+          const renderPhotoContent = () => {
+            if (!msg.imageUrl || isStickerImage) return null;
+            if (pureMode && !isPureImageRevealed) {
+              return (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRevealedPureImages((prev) => {
+                      const next = new Set(prev);
+                      next.add(msg.id);
+                      return next;
+                    });
+                  }}
+                  className="text-sky-300/90 transition-colors hover:text-sky-200"
+                  aria-label="加载查看图片"
+                >
+                  图片
+                </button>
+              );
+            }
+            if (pureMode && isPureImageRevealed) {
+              return (
+                <div className="overflow-hidden rounded-lg">
+                  <img
+                    src={msg.imageUrl}
+                    alt="聊天图片"
+                    loading="lazy"
+                    className={CHAT_PHOTO_CLASS}
+                  />
+                </div>
+              );
+            }
+            return (
+              <Tooltip content="点击查看大图">
+                <button
+                  type="button"
+                  onClick={() => setPreviewImageUrl(msg.imageUrl!)}
+                  className="block cursor-zoom-in overflow-hidden rounded-lg"
+                  aria-label="查看聊天图片"
+                >
+                  <img
+                    src={msg.imageUrl}
+                    alt="聊天图片"
+                    loading="lazy"
+                    className={CHAT_PHOTO_CLASS}
+                  />
+                </button>
+              </Tooltip>
+            );
+          };
+
           return (
             <div key={msg.id} className={`group flex w-full min-w-0 max-w-full flex-col ${isMe ? 'items-end' : 'items-start'}`} onContextMenu={(event) => { event.preventDefault(); handleReply(msg); }}>
               <div className={`mb-0.5 flex max-w-full min-w-0 items-center gap-1.5 ${isMe ? 'flex-row-reverse' : ''}`}>
@@ -961,43 +1153,28 @@ export default function ChatPanel({ className = '' }: { className?: string }) {
               </div>
               <div className={`flex min-w-0 max-w-[90%] items-start gap-1.5 ${isMe ? 'flex-row-reverse justify-end' : ''}`}>
                 <div className={`flex min-w-0 max-w-full flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                  <div className={`min-w-0 max-w-full rounded-2xl text-sm leading-7 break-words [overflow-wrap:anywhere] ${isImageOnly ? 'p-1' : 'px-3 py-1.5'} ${isMe ? 'rounded-br-md bg-netease-red/20 text-white' : 'rounded-bl-md bg-netease-dark/80 text-white/90'}`}>
-                    {msg.replyTo && (
-                      <div className={`mb-1 min-w-0 max-w-full break-words [overflow-wrap:anywhere] rounded-lg border-l-2 border-white/20 bg-black/20 text-xs leading-5 text-netease-muted ${isImageOnly ? 'mx-1 mt-1 px-2 py-1' : 'px-2 py-1'}`}>
-                        <span>回复 {msg.replyTo.nickname}：</span>
-                        {renderMessageText(msg.replyTo.text, 'reply')}
+                  {isStickerImage ? (
+                    <div className={`flex min-w-0 max-w-full flex-col gap-1 ${isMe ? 'items-end' : 'items-start'}`}>
+                      {msg.replyTo && (
+                        <div className={replyBubbleClass}>
+                          {renderReplyPreview()}
+                        </div>
+                      )}
+                      <div className="min-w-0 max-w-full">
+                        {renderStickerContent()}
                       </div>
-                    )}
-                    {msg.imageUrl && (
-                      pureMode ? (
-                        <button
-                          type="button"
-                          onClick={() => setPreviewImageUrl(msg.imageUrl!)}
-                          className={`text-sky-300/90 transition-colors hover:text-sky-200 ${msg.text ? 'mb-1' : ''}`}
-                          aria-label="加载查看图片"
-                        >
-                          图片
-                        </button>
-                      ) : (
-                        <Tooltip content="点击查看大图">
-                          <button
-                            type="button"
-                            onClick={() => setPreviewImageUrl(msg.imageUrl!)}
-                            className={`block cursor-zoom-in overflow-hidden rounded-lg ${msg.text ? 'mb-1' : ''}`}
-                            aria-label="查看聊天图片"
-                          >
-                            <img
-                              src={msg.imageUrl}
-                              alt="聊天图片"
-                              loading="lazy"
-                              className="max-h-40 max-w-[220px] object-contain"
-                            />
-                          </button>
-                        </Tooltip>
-                      )
-                    )}
-                    {msg.text ? renderMessageText(msg.text) : null}
-                  </div>
+                    </div>
+                  ) : (
+                    <div className={bubbleClass}>
+                      {msg.replyTo && (
+                        <div className={`mb-1 ${isPhotoOnly ? 'mx-1 mt-1' : ''}`}>
+                          {renderReplyPreview()}
+                        </div>
+                      )}
+                      {renderPhotoContent()}
+                      {msg.text ? renderMessageText(msg.text) : null}
+                    </div>
+                  )}
                   <ChatMessageReactions
                     reactions={msg.reactions}
                     myUserId={myUserId}
@@ -1073,9 +1250,9 @@ export default function ChatPanel({ className = '' }: { className?: string }) {
         )}
         {replyTo && (
           <div className="mb-1.5 flex items-center justify-between rounded-xl bg-white/5 px-2 py-1 text-xs text-netease-muted">
-            <span className="min-w-0 flex items-center gap-0.5 truncate leading-5">
+            <span className="min-w-0 flex flex-1 items-center gap-1 overflow-hidden leading-5">
               <span className="flex-shrink-0">回复 {replyTo.nickname}：</span>
-              <span className="min-w-0 truncate">{renderMessageText(replyTo.text, 'reply')}</span>
+              <span className="min-w-0 overflow-hidden">{renderReplyRefContent(replyTo)}</span>
             </span>
             <button
               type="button"
@@ -1130,7 +1307,10 @@ export default function ChatPanel({ className = '' }: { className?: string }) {
             onChange={(event) => { void handleImagePick(event); }}
           />
           {showEmoji && !isMobileLayout && (
-            <div className="absolute bottom-full left-0 z-20 mb-2 box-border w-full max-w-full rounded-2xl border border-netease-border/70 bg-netease-dark/95 p-2 shadow-2xl backdrop-blur">
+            <div
+              className={`absolute bottom-full left-0 z-20 mb-2 box-border flex w-full max-w-full flex-col rounded-2xl border border-netease-border/70 bg-netease-dark/95 p-2 shadow-2xl backdrop-blur ${emojiPickerTab === 'search' ? '' : 'max-h-80'}`}
+              style={emojiPickerTab === 'search' ? { height: STICKER_SEARCH_PICKER_HEIGHT } : undefined}
+            >
               {renderEmojiPickerContent('grid max-h-64 grid-cols-8 gap-0.5 overflow-y-auto overscroll-contain px-0.5 py-0.5')}
             </div>
           )}

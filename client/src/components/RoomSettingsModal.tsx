@@ -2,10 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Minus, Plus, Sparkles, X } from 'lucide-react';
 import { NETEASE_FM_MODE_OPTIONS, getFmModeLabel, normalizeFmMode } from '../api/music/fmMode';
+import type { BannedSong } from '../types';
+import SourceBadge from './SourceBadge';
 
 const ANNOUNCEMENT_MAX_LENGTH = 2000;
 const MIN_STAY_MINUTES_MAX = 24 * 60;
 const MAX_PER_USER_MAX = 50;
+const COOLDOWN_OPTIONS = [0, 10, 30, 60, 120] as const;
+const QUEUE_LIMIT_OPTIONS = [50, 100, 200] as const;
 
 type SettingsTab = 'fm' | 'member' | 'announcement' | 'songRequest';
 
@@ -13,6 +17,8 @@ export interface SongRequestSettings {
   enabled: boolean;
   minStayMinutes: number;
   maxPerUser: number;
+  cooldownSec: number;
+  queueMaxLength: number;
 }
 
 interface Props {
@@ -26,6 +32,8 @@ interface Props {
   announcementSaving?: boolean;
   songRequest: SongRequestSettings;
   songRequestSaving?: boolean;
+  bannedSongs?: BannedSong[];
+  onUnbanSong?: (name: string) => void | Promise<void>;
   memberTierCount: number;
   onClose: () => void;
   onSaveFmMode: (mode: string) => void;
@@ -152,6 +160,8 @@ export default function RoomSettingsModal({
   announcementSaving = false,
   songRequest,
   songRequestSaving = false,
+  bannedSongs = [],
+  onUnbanSong,
   memberTierCount,
   onClose,
   onSaveFmMode,
@@ -192,7 +202,14 @@ export default function RoomSettingsModal({
     || draftAnnouncementText.trim() !== announcementText.trim();
   const songRequestDirty = draftSongRequest.enabled !== songRequest.enabled
     || draftSongRequest.minStayMinutes !== songRequest.minStayMinutes
-    || draftSongRequest.maxPerUser !== songRequest.maxPerUser;
+    || draftSongRequest.maxPerUser !== songRequest.maxPerUser
+    || draftSongRequest.cooldownSec !== songRequest.cooldownSec
+    || draftSongRequest.queueMaxLength !== songRequest.queueMaxLength;
+
+  const formatCooldownLabel = (sec: number) => {
+    if (sec <= 0) return '不限制';
+    return `${sec} 秒`;
+  };
 
   return createPortal(
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
@@ -392,6 +409,94 @@ export default function RoomSettingsModal({
                     suffix="首"
                     onChange={(maxPerUser) => setDraftSongRequest((prev) => ({ ...prev, maxPerUser }))}
                   />
+                </div>
+
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5">
+                  <label className="text-sm font-medium text-white">
+                    点歌冷却时间
+                  </label>
+                  <p className="mt-0.5 text-xs text-netease-muted">
+                    每人每次点歌的最短间隔，防止连续刷屏占列表
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {COOLDOWN_OPTIONS.map((sec) => (
+                      <button
+                        key={sec}
+                        type="button"
+                        disabled={songRequestSaving}
+                        onClick={() => setDraftSongRequest((prev) => ({ ...prev, cooldownSec: sec }))}
+                        className={`rounded-lg px-2.5 py-1.5 text-xs transition-colors disabled:opacity-50 ${
+                          draftSongRequest.cooldownSec === sec
+                            ? 'bg-netease-red/20 text-white'
+                            : 'bg-white/5 text-netease-muted hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        {formatCooldownLabel(sec)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5">
+                  <label className="text-sm font-medium text-white">
+                    队列长度上限
+                  </label>
+                  <p className="mt-0.5 text-xs text-netease-muted">
+                    待播队列最多保留几首，超出后无法继续点歌
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {QUEUE_LIMIT_OPTIONS.map((limit) => (
+                      <button
+                        key={limit}
+                        type="button"
+                        disabled={songRequestSaving}
+                        onClick={() => setDraftSongRequest((prev) => ({ ...prev, queueMaxLength: limit }))}
+                        className={`rounded-lg px-2.5 py-1.5 text-xs transition-colors disabled:opacity-50 ${
+                          draftSongRequest.queueMaxLength === limit
+                            ? 'bg-netease-red/20 text-white'
+                            : 'bg-white/5 text-netease-muted hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        {limit} 首
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-sm font-medium text-white">禁播歌曲</label>
+                    <span className="text-[11px] text-netease-muted">{bannedSongs.length} 首</span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-netease-muted">
+                    可在播放队列中禁播某首歌；同名歌曲（任意平台）均无法点入
+                  </p>
+                  {bannedSongs.length > 0 ? (
+                    <div className="mt-2 max-h-40 space-y-1 overflow-y-auto pr-0.5">
+                      {bannedSongs.map((song) => (
+                        <div
+                          key={`${song.name}:${song.bannedAt ?? ''}`}
+                          className="flex items-center gap-2 rounded-lg bg-black/20 px-2 py-1.5"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-xs text-white/90">{song.name || '未知歌曲'}</p>
+                            <p className="truncate text-[10px] text-netease-muted">{song.artist || '未知歌手'}</p>
+                          </div>
+                          <SourceBadge source={song.source} className="flex-shrink-0 rounded-full px-1.5 py-0 text-[9px]" />
+                          <button
+                            type="button"
+                            disabled={songRequestSaving}
+                            onClick={() => onUnbanSong?.(song.name)}
+                            className="flex-shrink-0 rounded-md px-2 py-1 text-[10px] text-netease-muted transition-colors hover:bg-white/10 hover:text-white disabled:opacity-40"
+                          >
+                            解除
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-netease-muted/80">暂无禁播歌曲</p>
+                  )}
                 </div>
 
                 {songRequestDirty && (

@@ -91,6 +91,26 @@ export function buildChatImageUrl(key) {
   return `${DOMAIN}/${key}`;
 }
 
+const EXTERNAL_CHAT_IMAGE_HOST_RE = /^img[\w.-]*\.baidu\.com$/i;
+
+export function validateExternalChatImage(imageUrl) {
+  const url = String(imageUrl || '').trim();
+  if (!url || url.length > 2048) return { error: '图片地址无效' };
+
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { error: '图片地址无效' };
+  }
+
+  if (parsed.protocol !== 'https:' || !EXTERNAL_CHAT_IMAGE_HOST_RE.test(parsed.hostname)) {
+    return { error: '图片地址无效' };
+  }
+
+  return { ok: true };
+}
+
 export function validateChatImageForRoom(roomId, imageUrl, imageKey) {
   if (!isQiniuConfigured()) {
     return { error: '图片上传未配置' };

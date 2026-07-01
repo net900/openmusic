@@ -791,10 +791,40 @@ if (s.connected) {
     enabled?: boolean;
     minStaySec?: number;
     maxPerUser?: number;
+    cooldownSec?: number;
+    queueMaxLength?: number;
   }): Promise<{ success: boolean; error?: string; room?: RoomState }> => {
     return emitWithAck<{ success: boolean; error?: string; room?: RoomState }>(
       'set_room_song_request',
       options,
+      { success: false, error: '连接超时，请重试' },
+    ).then((res) => {
+      if (res.success && res.room) {
+        applyRoomSnapshot(res.room);
+      }
+      return res;
+    });
+  }, []);
+
+  const banRoomSong = useCallback((song: Song): Promise<{ success: boolean; error?: string; room?: RoomState }> => {
+    return emitWithAck<{ success: boolean; error?: string; room?: RoomState }>(
+      'ban_room_song',
+      { song },
+      { success: false, error: '连接超时，请重试' },
+    ).then((res) => {
+      if (res.success && res.room) {
+        applyRoomSnapshot(res.room);
+      }
+      return res;
+    });
+  }, []);
+
+  const unbanRoomSong = useCallback((
+    name: string,
+  ): Promise<{ success: boolean; error?: string; room?: RoomState }> => {
+    return emitWithAck<{ success: boolean; error?: string; room?: RoomState }>(
+      'unban_room_song',
+      { name },
       { success: false, error: '连接超时，请重试' },
     ).then((res) => {
       if (res.success && res.room) {
@@ -978,6 +1008,10 @@ if (s.connected) {
     setRoomAnnouncement,
 
     setSongRequestEnabled,
+
+    banRoomSong,
+
+    unbanRoomSong,
 
     setRoomAudioQuality,
 

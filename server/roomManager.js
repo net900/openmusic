@@ -18,14 +18,17 @@ import {
   serializeMemberTier,
   serializeMemberTiersMap,
 } from './memberTier.js';
-import { deleteRoomChatImages, validateChatImageForRoom } from './qiniuOss.js';
+import { deleteRoomChatImages, validateChatImageForRoom, validateExternalChatImage } from './qiniuOss.js';
 import { collectDeviceIdsForUser, isAccessBanned } from './deviceIdentity.js';
 
 const generateRoomId = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 6);
 const generateId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 12);
 
 const ROOM_EMPTY_TTL_MS = 10 * 60 * 1000;
-const MAX_QUEUE_LENGTH = 200;
+const DEFAULT_QUEUE_MAX_LENGTH = 200;
+const ALLOWED_QUEUE_MAX_LENGTHS = [50, 100, 200];
+const ALLOWED_SONG_REQUEST_COOLDOWNS_SEC = [0, 10, 30, 60, 120];
+const MAX_BANNED_SONGS = 100;
 const MAX_CHAT_MESSAGES = 300;
 const MAX_SONG_HISTORY = 150;
 export const INITIAL_CHAT_LIMIT = 100;
@@ -167,6 +170,9 @@ function snapshotRoomForStorage(room) {
     songRequestEnabled: room.songRequestEnabled !== false,
     songRequestMinStaySec: normalizeSongRequestMinStaySec(room.songRequestMinStaySec),
     songRequestMaxPerUser: normalizeSongRequestMaxPerUser(room.songRequestMaxPerUser),
+    songRequestCooldownSec: normalizeSongRequestCooldownSec(room.songRequestCooldownSec),
+    queueMaxLength: normalizeQueueMaxLength(room.queueMaxLength),
+    bannedSongs: serializeBannedSongs(room.bannedSongs),
     memberTiers: serializeMemberTiersMap(room.memberTiers),
     memberSettings: serializeMemberSettings(room.memberSettings),
     createdAt: room.createdAt,
@@ -207,6 +213,9 @@ function restoreRoomFromStorage(data) {
   room.songRequestEnabled = data.songRequestEnabled !== false;
   room.songRequestMinStaySec = normalizeSongRequestMinStaySec(data.songRequestMinStaySec);
   room.songRequestMaxPerUser = normalizeSongRequestMaxPerUser(data.songRequestMaxPerUser);
+  room.songRequestCooldownSec = normalizeSongRequestCooldownSec(data.songRequestCooldownSec);
+  room.queueMaxLength = normalizeQueueMaxLength(data.queueMaxLength);
+  room.bannedSongs = restoreBannedSongs(data.bannedSongs);
   room.memberTiers = restoreMemberTiersFromStorage(data.memberTiers);
   room.memberSettings = normalizeMemberSettings(data.memberSettings);
   room.createdAt = data.createdAt ?? Date.now();
@@ -360,6 +369,10 @@ function createEmptyRoom(roomId, name, passwordHash = null) {
     songRequestEnabled: true,
     songRequestMinStaySec: 0,
     songRequestMaxPerUser: 0,
+    songRequestCooldownSec: 0,
+    queueMaxLength: DEFAULT_QUEUE_MAX_LENGTH,
+    bannedSongs: [],
+    lastSongRequestAt: new Map(),
     memberTiers: new Map(),
     memberSettings: { ...DEFAULT_MEMBER_SETTINGS },
     createdAt: Date.now(),
@@ -472,6 +485,79 @@ function normalizeSongRequestMaxPerUser(value) {
   const count = Math.floor(Number(value) || 0);
   if (!Number.isFinite(count) || count < 0) return 0;
   return Math.min(count, MAX_SONG_REQUEST_PER_USER);
+}
+
+function normalizeSongRequestCooldownSec(value) {
+  const sec = Math.floor(Number(value) || 0);
+  if (!ALLOWED_SONG_REQUEST_COOLDOWNS_SEC.includes(sec)) return 0;
+  return sec;
+}
+
+function normalizeQueueMaxLength(value) {
+  const length = Math.floor(Number(value) || DEFAULT_QUEUE_MAX_LENGTH);
+  if (!ALLOWED_QUEUE_MAX_LENGTHS.includes(length)) return DEFAULT_QUEUE_MAX_LENGTH;
+  return length;
+}
+
+function getRoomQueueMaxLength(room) {
+  return normalizeQueueMaxLength(room?.queueMaxLength);
+}
+
+function ensureLastSongRequestAt(room) {
+  if (!room.lastSongRequestAt) room.lastSongRequestAt = new Map();
+  return room.lastSongRequestAt;
+}
+
+function ensureBannedSongs(room) {
+  if (!Array.isArray(room.bannedSongs)) room.bannedSongs = [];
+  return room.bannedSongs;
+}
+
+function normalizeBannedSongName(name) {
+  return String(name || '').trim().toLowerCase();
+}
+
+function serializeBannedSong(entry) {
+  const name = String(entry?.name || '').trim().slice(0, 120);
+  if (!name) return null;
+  return {
+    source: String(entry.source || 'netease'),
+    id: String(entry.id || name),
+    name,
+    artist: String(entry.artist || '').slice(0, 120),
+    bannedAt: Number(entry.bannedAt) || Date.now(),
+  };
+}
+
+function serializeBannedSongs(list) {
+  return ensureBannedSongs({ bannedSongs: list })
+    .map(serializeBannedSong)
+    .filter(Boolean)
+    .slice(0, MAX_BANNED_SONGS);
+}
+
+function restoreBannedSongs(list) {
+  return serializeBannedSongs(Array.isArray(list) ? list : []);
+}
+
+function isSongBanned(room, song) {
+  const name = normalizeBannedSongName(song?.name);
+  if (!name) return false;
+  return ensureBannedSongs(room).some(
+    (entry) => normalizeBannedSongName(entry.name) === name,
+  );
+}
+
+function formatSongRequestCooldownError(remainSec) {
+  const sec = Math.ceil(Math.max(1, remainSec));
+  return `点歌冷却中，还需等待 ${sec} 秒`;
+}
+
+function trimQueueToMaxLength(room) {
+  const maxLength = getRoomQueueMaxLength(room);
+  if (room.queue.length <= maxLength) return;
+  sortQueueByPriority(room);
+  room.queue.splice(maxLength);
 }
 
 function countUserRequestedSongs(room, userId) {
@@ -1080,6 +1166,64 @@ export function setSongRequestEnabled(roomId, actorId, options = {}, connectionI
   if (options.maxPerUser !== undefined) {
     room.songRequestMaxPerUser = normalizeSongRequestMaxPerUser(options.maxPerUser);
   }
+  if (options.cooldownSec !== undefined) {
+    room.songRequestCooldownSec = normalizeSongRequestCooldownSec(options.cooldownSec);
+  }
+  if (options.queueMaxLength !== undefined) {
+    room.queueMaxLength = normalizeQueueMaxLength(options.queueMaxLength);
+    trimQueueToMaxLength(room);
+  }
+
+  persistRoom(room);
+  return { room: serializeRoom(room) };
+}
+
+export function banRoomSong(roomId, actorId, song) {
+  const room = rooms.get(roomId);
+  if (!room) return { error: '房间不存在' };
+  if (!canModerate(room, actorId)) return { error: '仅房主或管理员可禁播歌曲' };
+
+  const entry = serializeBannedSong({
+    source: song?.source,
+    id: song?.id,
+    name: song?.name,
+    artist: song?.artist,
+    bannedAt: Date.now(),
+  });
+  if (!entry) return { error: '歌曲信息无效' };
+
+  const bannedSongs = ensureBannedSongs(room);
+  if (!isSongBanned(room, entry)) {
+    if (bannedSongs.length >= MAX_BANNED_SONGS) {
+      return { error: `禁播列表最多 ${MAX_BANNED_SONGS} 首` };
+    }
+    bannedSongs.push(entry);
+  }
+
+  const bannedName = normalizeBannedSongName(entry.name);
+  room.queue = room.queue.filter(
+    (item) => normalizeBannedSongName(item.name) !== bannedName,
+  );
+
+  persistRoom(room);
+  return { room: serializeRoom(room) };
+}
+
+export function unbanRoomSong(roomId, actorId, name) {
+  const room = rooms.get(roomId);
+  if (!room) return { error: '房间不存在' };
+  if (!canModerate(room, actorId)) return { error: '仅房主或管理员可解除禁播' };
+
+  const normalized = normalizeBannedSongName(name);
+  if (!normalized) return { error: '歌曲信息无效' };
+
+  const before = ensureBannedSongs(room).length;
+  room.bannedSongs = ensureBannedSongs(room).filter(
+    (entry) => normalizeBannedSongName(entry.name) !== normalized,
+  );
+  if (room.bannedSongs.length === before) {
+    return { error: '歌曲不在禁播列表中' };
+  }
 
   persistRoom(room);
   return { room: serializeRoom(room) };
@@ -1334,14 +1478,28 @@ export async function addToQueue(roomId, song, requestedByUser) {
         return { error: `每人最多 ${maxPerUser} 首待播，你已达上限` };
       }
     }
+
+    const cooldownSec = normalizeSongRequestCooldownSec(room.songRequestCooldownSec);
+    if (cooldownSec > 0) {
+      const lastAt = ensureLastSongRequestAt(room).get(requestedBy.id) || 0;
+      const elapsedSec = (Date.now() - lastAt) / 1000;
+      if (lastAt > 0 && elapsedSec < cooldownSec) {
+        return { error: formatSongRequestCooldownError(cooldownSec - elapsedSec) };
+      }
+    }
+  }
+
+  if (isSongBanned(room, song)) {
+    return { error: '该歌曲已被禁播' };
   }
 
   if (isSongInPlaylist(room, song)) {
     return { error: '这首歌已经在歌单里啦' };
   }
 
-  if (room.queue.length >= MAX_QUEUE_LENGTH) {
-    return { error: `队列最多保留 ${MAX_QUEUE_LENGTH} 首歌` };
+  const queueMaxLength = getRoomQueueMaxLength(room);
+  if (room.queue.length >= queueMaxLength) {
+    return { error: `队列最多保留 ${queueMaxLength} 首歌` };
   }
 
   const item = serializeQueueItemForRoom({
@@ -1355,6 +1513,13 @@ export async function addToQueue(roomId, song, requestedByUser) {
   });
 
   room.queue.push(item);
+
+  if (!canControlPlayback(room, requestedBy.id)) {
+    const cooldownSec = normalizeSongRequestCooldownSec(room.songRequestCooldownSec);
+    if (cooldownSec > 0) {
+      ensureLastSongRequestAt(room).set(requestedBy.id, Date.now());
+    }
+  }
 
   if (!room.current) {
     await withPlaybackLock(room, async () => {
@@ -1929,6 +2094,7 @@ function serializeChatMessage(message) {
     nickname: message.nickname,
     text: message.text,
     imageUrl: message.imageUrl || null,
+    imageKey: message.imageKey || null,
     kind: message.kind || 'chat',
     mentions: message.mentions || [],
     replyTo: message.replyTo || null,
@@ -1976,6 +2142,24 @@ export function toggleChatReaction(roomId, userId, messageId, emoji) {
   };
 }
 
+function sanitizeChatReplyRef(replyTo) {
+  if (!replyTo || typeof replyTo !== 'object') return null;
+  const id = String(replyTo.id || '').trim();
+  const userId = String(replyTo.userId || '').trim();
+  const nickname = String(replyTo.nickname || '').trim().slice(0, 32);
+  const text = String(replyTo.text || '').trim().slice(0, 48);
+  if (!id || !userId || !nickname) return null;
+
+  const imageUrl = String(replyTo.imageUrl || '').trim();
+  const imageKey = String(replyTo.imageKey || '').trim();
+  const result = { id, userId, nickname, text };
+  if (imageUrl) {
+    result.imageUrl = imageUrl;
+    if (imageKey) result.imageKey = imageKey;
+  }
+  return result;
+}
+
 export function addChatMessage(roomId, userId, text, options = {}) {
   const room = rooms.get(roomId);
   if (!room) return { error: '房间不存在' };
@@ -1993,7 +2177,9 @@ export function addChatMessage(roomId, userId, text, options = {}) {
   }
 
   if (imageUrl) {
-    const imageCheck = validateChatImageForRoom(roomId, imageUrl, imageKey);
+    const imageCheck = imageKey
+      ? validateChatImageForRoom(roomId, imageUrl, imageKey)
+      : validateExternalChatImage(imageUrl);
     if (imageCheck.error) return imageCheck;
   }
 
@@ -2014,7 +2200,7 @@ export function addChatMessage(roomId, userId, text, options = {}) {
     imageUrl: imageUrl || undefined,
     imageKey: imageKey || undefined,
     mentions,
-    replyTo: options.replyTo || null,
+    replyTo: sanitizeChatReplyRef(options.replyTo),
     timestamp: Date.now(),
   };
 
@@ -2286,6 +2472,9 @@ function serializeRoom(room, options = {}) {
     songRequestEnabled: room.songRequestEnabled !== false,
     songRequestMinStaySec: normalizeSongRequestMinStaySec(room.songRequestMinStaySec),
     songRequestMaxPerUser: normalizeSongRequestMaxPerUser(room.songRequestMaxPerUser),
+    songRequestCooldownSec: normalizeSongRequestCooldownSec(room.songRequestCooldownSec),
+    queueMaxLength: normalizeQueueMaxLength(room.queueMaxLength),
+    bannedSongs: viewerCanModerate ? serializeBannedSongs(room.bannedSongs) : undefined,
     memberTiers: serializeMemberTiersMap(room.memberTiers),
     memberSettings: serializeMemberSettings(room.memberSettings),
   };

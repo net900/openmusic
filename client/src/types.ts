@@ -51,6 +51,14 @@ export interface SongHistoryItem extends Song {
   requestedAt: number;
 }
 
+export interface BannedSong {
+  source: MusicSource;
+  id: string;
+  name: string;
+  artist: string;
+  bannedAt?: number;
+}
+
 export interface RoomUser {
   id: string;
   nickname: string;
@@ -78,6 +86,8 @@ export interface ChatReplyRef {
   userId: string;
   nickname: string;
   text: string;
+  imageUrl?: string | null;
+  imageKey?: string | null;
 }
 
 export interface ChatReactionUser {
@@ -96,6 +106,7 @@ export interface ChatMessage {
   nickname: string;
   text: string;
   imageUrl?: string | null;
+  imageKey?: string | null;
   kind?: 'chat' | 'welcome' | 'system';
   mentions?: ChatMention[];
   replyTo?: ChatReplyRef | null;
@@ -164,6 +175,12 @@ export interface RoomState {
   songRequestMinStaySec?: number;
   /** 每人队列中最多保留几首，0 表示不限制 */
   songRequestMaxPerUser?: number;
+  /** 每人点歌冷却秒数，0 表示不限制 */
+  songRequestCooldownSec?: number;
+  /** 队列最多保留几首 */
+  queueMaxLength?: number;
+  /** 禁播歌曲（仅房主/管理员可见） */
+  bannedSongs?: BannedSong[];
   /** 房间贵宾角标（userId → 配置） */
   memberTiers?: Record<string, RoomMemberTier>;
   /** 贵宾欢迎语等房间级设置 */

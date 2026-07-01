@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 
-import { Search, Loader2, Copy, Check, LogOut, X, Heart, Plus, Download, ListMusic, Upload, History, ListPlus, Pencil, Lock, LockOpen, ChevronLeft, ChevronRight, Cog, Settings2, Shield } from 'lucide-react';
+import { Search, Loader2, Copy, Check, LogOut, X, Heart, Plus, Download, ListMusic, Upload, History, ListPlus, Pencil, Lock, LockOpen, ChevronLeft, ChevronRight, SlidersHorizontal, Settings2, Shield } from 'lucide-react';
 
 import { searchAllSongs, getAvailableSources, type SearchFilterMode } from '../api/music';
 import { importPlaylist, searchPlaylists, type PlaylistSearchItem, type PlaylistPlatform, type PlaylistChannelFilter as PlaylistChannelFilterMode } from '../api/music/playlist';
@@ -219,7 +219,7 @@ export default function Room() {
     noindex: true,
   });
 
-  const { joinRoom, addSong, leaveRoom, listFavorites, setFavorite, importFavorites, renameRoomName, setRoomLock, setRoomFmMode, setRoomAnnouncement, setSongRequestEnabled, setRoomMemberTier, removeRoomMemberTier, setRoomMemberSettings, loadSongHistory } = useSocket();
+  const { joinRoom, addSong, leaveRoom, listFavorites, setFavorite, importFavorites, renameRoomName, setRoomLock, setRoomFmMode, setRoomAnnouncement, setSongRequestEnabled, unbanRoomSong, setRoomMemberTier, removeRoomMemberTier, setRoomMemberSettings, loadSongHistory } = useSocket();
   const { applyFavorites } = useFavorites();
 
 
@@ -292,6 +292,7 @@ export default function Room() {
   const [qualityOpen, setQualityOpen] = useState(false);
   const [memberSaving, setMemberSaving] = useState(false);
   const [songRequestSaving, setSongRequestSaving] = useState(false);
+  const lastSongRequestAtRef = useRef(0);
   const songHistoryItems = useSongHistoryStore((s) => s.songs);
   const songHistoryLoading = useSongHistoryStore((s) => s.loading);
 
@@ -307,12 +308,20 @@ export default function Room() {
   const closeToast = useCallback(() => setToast(null), []);
 
   const isCreator = Boolean(room?.creatorId && mySocketId && room.creatorId === mySocketId);
-  const songRequestBlockReason = getSongRequestBlockReason(room, isOwner, isAdmin, mySocketId);
+  const songRequestBlockReason = getSongRequestBlockReason(
+    room,
+    isOwner,
+    isAdmin,
+    mySocketId,
+    lastSongRequestAtRef.current,
+  );
   const canOpenRoomSettings = isOwner || canControlPlayback;
   const songRequestSettings: SongRequestSettings = {
     enabled: room?.songRequestEnabled !== false,
     minStayMinutes: Math.floor((room?.songRequestMinStaySec ?? 0) / 60),
     maxPerUser: room?.songRequestMaxPerUser ?? 0,
+    cooldownSec: room?.songRequestCooldownSec ?? 0,
+    queueMaxLength: room?.queueMaxLength ?? 200,
   };
 
   const openRenameModal = useCallback(() => {
@@ -876,6 +885,7 @@ export default function Room() {
     });
     setAddingId(null);
     if (res.success) {
+      lastSongRequestAtRef.current = Date.now();
       showToast('点歌成功', 'success');
       setHotRefreshKey((k) => k + 1);
     } else if (res.error) {
@@ -894,6 +904,7 @@ export default function Room() {
       isOwner,
       isAdmin,
       useRoomStore.getState().mySocketId,
+      lastSongRequestAtRef.current || null,
     );
     if (blockReason) {
       showToast(blockReason, 'error');
@@ -944,6 +955,8 @@ export default function Room() {
       enabled: settings.enabled,
       minStaySec: settings.minStayMinutes * 60,
       maxPerUser: settings.maxPerUser,
+      cooldownSec: settings.cooldownSec,
+      queueMaxLength: settings.queueMaxLength,
     });
     setSongRequestSaving(false);
     if (res.success) {
@@ -952,6 +965,18 @@ export default function Room() {
       showToast(res.error || '点歌设置失败', 'error');
     }
   }, [songRequestSaving, setSongRequestEnabled, showToast]);
+
+  const handleUnbanSong = useCallback(async (name: string) => {
+    if (songRequestSaving) return;
+    setSongRequestSaving(true);
+    const res = await unbanRoomSong(name);
+    setSongRequestSaving(false);
+    if (res.success) {
+      showToast('已解除禁播', 'success');
+    } else {
+      showToast(res.error || '解除禁播失败', 'error');
+    }
+  }, [songRequestSaving, unbanRoomSong, showToast]);
 
   const handleOpenMemberModalFromSettings = useCallback(() => {
     setSettingsOpen(false);
@@ -1431,6 +1456,8 @@ export default function Room() {
         announcementSaving={announcementSaving}
         songRequest={songRequestSettings}
         songRequestSaving={songRequestSaving}
+        bannedSongs={room?.bannedSongs ?? []}
+        onUnbanSong={handleUnbanSong}
         memberTierCount={Object.keys(room?.memberTiers ?? {}).length}
         onClose={() => setSettingsOpen(false)}
         onSaveFmMode={handleSaveFmMode}
@@ -1532,7 +1559,7 @@ export default function Room() {
                       className="flex-shrink-0 rounded-lg p-1 text-netease-muted transition-colors hover:bg-white/10 hover:text-white"
                       aria-label="房间设置"
                     >
-                      <Cog className="w-3.5 h-3.5" />
+                      <SlidersHorizontal className="w-3.5 h-3.5" />
                     </button>
                   </Tooltip>
                 )}
@@ -1562,6 +1589,16 @@ export default function Room() {
                 {(room.songRequestMaxPerUser ?? 0) > 0 && (
                   <span className="text-[10px] text-white/45 bg-white/5 px-1.5 py-0.5 rounded-full">
                     每人最多 {room.songRequestMaxPerUser} 首待播
+                  </span>
+                )}
+                {(room.songRequestCooldownSec ?? 0) > 0 && (
+                  <span className="text-[10px] text-white/45 bg-white/5 px-1.5 py-0.5 rounded-full">
+                    点歌冷却 {room.songRequestCooldownSec} 秒
+                  </span>
+                )}
+                {(room.queueMaxLength ?? 200) < 200 && (
+                  <span className="text-[10px] text-white/45 bg-white/5 px-1.5 py-0.5 rounded-full">
+                    队列上限 {room.queueMaxLength} 首
                   </span>
                 )}
                 {room.announcementEnabled && room.announcementText?.trim() && (

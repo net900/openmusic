@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Trash2, Music, Zap, ThumbsUp, AlertTriangle } from 'lucide-react';
+import { Trash2, Music, Zap, ThumbsUp, AlertTriangle, Ban } from 'lucide-react';
 import { getClientId } from '../lib/clientId';
 import { isTrackSourceError } from '../lib/songPreloadCache';
 import { useSourceErrorRevision } from '../hooks/useSongSourceError';
@@ -29,7 +29,7 @@ export default function QueuePanel({ fillHeight = false }: Props) {
   const nickname = useRoomStore((s) => s.nickname);
   const mySocketId = useRoomStore((s) => s.mySocketId);
   const canControlPlayback = useRoomStore((s) => s.canControlPlayback);
-  const { removeSong, requestJump, toggleQueueLike } = useSocket();
+  const { removeSong, requestJump, toggleQueueLike, banRoomSong } = useSocket();
   const [jumpMsg, setJumpMsg] = useState('');
   const currentRef = useRef<HTMLDivElement>(null);
   useSourceErrorRevision();
@@ -66,6 +66,26 @@ export default function QueuePanel({ fillHeight = false }: Props) {
   const handleLike = async (queueId: string) => {
     const res = await toggleQueueLike(queueId);
     if (!res.success && res.error) showQueueMessage(res.error);
+  };
+
+  const handleBanSong = async (song: typeof allSongs[number]) => {
+    setJumpMsg('');
+    const res = await banRoomSong({
+      id: song.id,
+      source: song.source || 'netease',
+      name: song.name,
+      artist: song.artist,
+      album: song.album,
+      pic: song.pic,
+      duration: song.duration,
+      url: song.url,
+      lrc: song.lrc,
+    });
+    if (res.success) {
+      showQueueMessage('已禁播并移出队列');
+    } else {
+      showQueueMessage(res.error || '禁播失败');
+    }
   };
 
   if (!room) return null;
@@ -200,6 +220,17 @@ export default function QueuePanel({ fillHeight = false }: Props) {
                             aria-label="删除"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </Tooltip>
+                      )}
+                      {canControlPlayback && !song.isCurrent && (
+                        <Tooltip content="禁播此歌">
+                          <button
+                            onClick={() => void handleBanSong(song)}
+                            className="rounded-lg p-1 text-netease-muted transition-colors hover:bg-amber-400/10 hover:text-amber-300"
+                            aria-label="禁播"
+                          >
+                            <Ban className="h-3.5 w-3.5" />
                           </button>
                         </Tooltip>
                       )}
