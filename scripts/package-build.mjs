@@ -68,9 +68,7 @@ fs.writeFileSync(
 5. pm2 start ../deploy/ecosystem.config.cjs
 6. 宝塔 Nginx 参考 deploy/nginx.conf.example 配置反向代理
 
-前端 SEO（可选）：
-- 若需重新构建前端并生成 sitemap，见 client/.env.example
-- 本包已含构建好的 client/dist，一般无需再配
+前端 SEO / sitemap 由服务端动态生成，无需额外配置。
 
 详细说明见 deploy/DEPLOY-BAOTA.md
 `,

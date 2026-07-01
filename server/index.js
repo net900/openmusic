@@ -1,7 +1,7 @@
 import './loadEnv.js';
 import { resizeCoverForThumb } from './coverUrl.js';
 import { serveUpstreamMedia } from './mediaProxy.js';
-import { buildRobotsTxt, buildSitemapXml, resolveSiteOrigin } from '../shared/seoFiles.mjs';
+import { buildRobotsTxt, buildSitemapXml, resolveSiteOrigin } from './seoFiles.js';
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';

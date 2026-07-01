@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { buildRobotsTxt, buildSitemapXml, resolveDevSiteOrigin } from '../shared/seoFiles.mjs';
+import { buildRobotsTxt, buildSitemapXml, resolveDevSiteOrigin } from '../server/seoFiles.js';
 
 function seoDevMiddleware() {
   return {
