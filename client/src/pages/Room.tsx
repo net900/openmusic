@@ -571,7 +571,6 @@ export default function Room() {
   }, []);
 
   useEffect(() => {
-    if (!isLgUp) return;
     const overlayOpen = Boolean(searchedKeyword || searching || playlistSearchLoading);
     if (overlayOpen && !prevOverlayOpenRef.current) {
       setOverlaySearchMode(activeSearchMode);
@@ -587,7 +586,7 @@ export default function Room() {
       setOverlayQuery(keyword);
     }
     prevOverlayOpenRef.current = overlayOpen;
-  }, [isLgUp, activeSearchMode, searchedKeyword, searching, playlistSearchLoading, playlistSearchBackup, query]);
+  }, [activeSearchMode, searchedKeyword, searching, playlistSearchLoading, playlistSearchBackup, query]);
 
   const doSearch = useCallback(async (keyword: string, filterMode = searchFilterMode) => {
 
@@ -1188,7 +1187,7 @@ export default function Room() {
   const showPlaylistEmpty = showPlaylistSearch && !playlistSearchLoading && playlistSearchResults.length === 0;
   const showPlaylistSkeleton = showPlaylistSearch && playlistSearchLoading && playlistSearchResults.length === 0;
   const playlistSearchTotalPages = Math.max(1, Math.ceil(playlistSearchTotal / playlistSearchPageSize));
-  const externalSearchButtonLoading = showDesktopSearchOverlay && isLgUp
+  const externalSearchButtonLoading = showDesktopSearchOverlay
     ? false
     : searchMode === 'song'
       ? searching
@@ -1297,10 +1296,10 @@ export default function Room() {
     </div>
   );
 
-  const playlistSearchList = (
+  const renderPlaylistSearchList = (fillHeight = false) => (
     <div
-      className="flex min-h-0 flex-col"
-      style={{ height: RESULT_BODY_HEIGHT }}
+      className={`flex min-h-0 flex-col ${fillHeight ? 'h-full' : ''}`}
+      style={fillHeight ? undefined : { height: RESULT_BODY_HEIGHT }}
     >
       <div className={`relative min-h-0 flex-1 overflow-y-auto ${playlistSearchLoading ? 'pointer-events-none' : ''}`}>
         <div className={`space-y-2 transition-opacity ${playlistSearchLoading ? 'opacity-40' : ''}`}>
@@ -1782,70 +1781,6 @@ export default function Room() {
               {renderQueueSection(true)}
             </div>
 
-            <div className="lg:hidden">
-              {searching && searchedKeyword && !showPlaylistSearch && <SearchSkeleton />}
-              {showPlaylistSkeleton && (
-                <SearchSkeleton count={playlistSearchPageSize} showPaginationFooter={false} />
-              )}
-
-              {!searching && !playlistSearchLoading && searchedKeyword && (
-                <div className="flex items-center justify-between mb-2 px-1 gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    {isPlaylistResults && playlistSearchBackup && (
-                      <button
-                        type="button"
-                        onClick={handleBackToPlaylistSearch}
-                        className="flex flex-shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-netease-muted hover:bg-white/10 hover:text-white transition-colors"
-                      >
-                        <ChevronLeft className="w-3.5 h-3.5" />
-                        返回
-                      </button>
-                    )}
-                    <span className="text-xs text-netease-muted min-w-0 truncate">
-                      {renderResultsSummary()}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-                    {showPlaylistSearch && (
-                      <PlaylistChannelFilter value={playlistChannelFilter} onChange={handlePlaylistChannelChange} />
-                    )}
-                    {searchableCount > 0 && !isPlaylistResults && (
-                      activeSearchMode === 'song' && <SearchFilterSelect value={searchFilterMode} onChange={handleSearchFilterChange} />
-                    )}
-                    {showSongListResults && renderBulkAddPageButton()}
-                    <button
-                      type="button"
-                      onClick={clearSearchResults}
-                      className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-netease-muted hover:bg-white/10 hover:text-white transition-colors"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                      清空
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {!searching && !playlistSearchLoading && searchedKeyword && !hasPlaylistSearchResults && results.length === 0 && (
-                <p className="text-center text-netease-muted py-4 sm:py-6 animate-fade-in">
-                  {showPlaylistEmpty ? '没有找到相关歌单' : (isPlaylistResults ? '歌单为空或链接无效' : '换个关键词试试')}
-                </p>
-              )}
-
-              {hasPlaylistSearchResults && playlistSearchList}
-
-              {!searching && searchedKeyword && (
-                !showPlaylistSearch && (
-                <SongResultList
-                  results={results}
-                  addingId={addingId}
-                  onAdd={handleAdd}
-                  keyword={searchedKeyword}
-                  onPageResultsChange={handleListPageResultsChange}
-                />
-                )
-              )}
-            </div>
-
             {pureMode && !isLgUp && (
               <div className="mt-3 flex-shrink-0">
                 {renderQueueSection()}
@@ -1862,7 +1797,7 @@ export default function Room() {
             </div>
             )}
 
-            <div className="h-[300px] sm:h-[320px] lg:h-full lg:min-h-0 lg:flex-1">
+            <div className="h-[min(55vh,480px)] sm:h-[min(60vh,520px)] lg:h-full lg:min-h-0 lg:flex-1">
               <ChatPanel />
             </div>
           </div>
@@ -1872,9 +1807,9 @@ export default function Room() {
 
       </div>
 
-      {/* 桌面：搜索结果弹层 */}
+      {/* 搜索结果弹层（移动端底部抽屉 / 桌面居中弹窗） */}
       {showDesktopSearchOverlay && (
-        <div className="hidden lg:flex fixed inset-0 z-50 items-start justify-center px-4 pt-24 pb-8">
+        <div className="fixed inset-0 z-50 flex items-end justify-center lg:items-start px-0 lg:px-4 pt-0 lg:pt-24 pb-0 lg:pb-8">
           <button
             type="button"
             className="absolute inset-0 z-0 bg-black/65 backdrop-blur-sm"
@@ -1882,7 +1817,7 @@ export default function Room() {
             aria-label="关闭搜索结果"
           />
           <div
-            className="relative z-10 w-full max-w-2xl max-h-[min(72vh,680px)] flex flex-col glass rounded-2xl border border-white/10 shadow-2xl animate-fade-in overflow-hidden pointer-events-auto"
+            className="relative z-10 w-full max-w-2xl max-h-[min(85vh,680px)] lg:max-h-[min(72vh,680px)] flex flex-col glass rounded-t-2xl lg:rounded-2xl border border-white/10 border-b-0 lg:border-b shadow-2xl animate-fade-in overflow-hidden pointer-events-auto pb-[env(safe-area-inset-bottom,0px)]"
             onClick={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
           >
@@ -1936,7 +1871,7 @@ export default function Room() {
                   {showPlaylistEmpty ? '没有找到相关歌单' : (isPlaylistResults ? '歌单为空或链接无效' : '换个关键词试试')}
                 </p>
               )}
-              {hasPlaylistSearchResults && playlistSearchList}
+              {hasPlaylistSearchResults && renderPlaylistSearchList(true)}
               {!searching && searchedKeyword && (
                 !showPlaylistSearch && (
                 <SongResultList

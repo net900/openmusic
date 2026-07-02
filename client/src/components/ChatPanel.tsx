@@ -1027,6 +1027,7 @@ export default function ChatPanel({ className = '' }: { className?: string }) {
           const myUserId = mySocketId || getClientId();
           const isMe = msg.userId === myUserId;
           const isRoomCreator = msg.userId === room.creatorId;
+          const isRoomAdmin = (room.adminIds || []).includes(msg.userId);
           const userMemberTier = room.memberTiers?.[msg.userId];
           const user = userMap.get(msg.userId);
           const isStickerImage = Boolean(msg.imageUrl && !msg.imageKey);
@@ -1139,6 +1140,7 @@ export default function ChatPanel({ className = '' }: { className?: string }) {
                   {msg.nickname}
                 </button>
                 {isRoomCreator && <RoleBadge role="owner" />}
+                {isRoomAdmin && !isRoomCreator && <RoleBadge role="admin" />}
                 {userMemberTier && <MemberTierBadge tier={userMemberTier} />}
                 {msg.timestamp > 0 && (
                   <Tooltip content={new Date(msg.timestamp).toLocaleString('zh-CN')} side="bottom">
@@ -1365,6 +1367,9 @@ export default function ChatPanel({ className = '' }: { className?: string }) {
                     >
                       <span className="min-w-0 truncate">{option.user.nickname}</span>
                       {option.user.id === room.creatorId && <RoleBadge role="owner" className="ml-2" />}
+                      {option.user.id !== room.creatorId && (room.adminIds || []).includes(option.user.id) && (
+                        <RoleBadge role="admin" className="ml-2" />
+                      )}
                     </button>
                   )
                 ))}
