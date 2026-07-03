@@ -1146,6 +1146,68 @@ html.control-glass-svg-ok #search-box {
   animation: immersive-lyric-out 280ms cubic-bezier(0.55, 0, 0.85, 0.45) forwards;
 }
 
+/* Topography — viewport-centered lyrics (sonic-topography style) */
+.topography-center-lyrics {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  padding: 0 5vw;
+  perspective: 920px;
+}
+
+.topography-center-lyric-transform {
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+.topography-center-lyric-line {
+  margin: 0;
+  max-width: min(92vw, 960px);
+  text-align: center;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-weight: 700;
+  font-size: clamp(30px, 5.2vw, 72px);
+  color: transparent;
+  background-image: linear-gradient(
+    90deg,
+    var(--lyric-highlight, #eef7ff) 0%,
+    var(--lyric-highlight, #eef7ff) calc(var(--lyric-progress, 0) * 100%),
+    var(--lyric-primary, #d8f1ff) calc(var(--lyric-progress, 0) * 100%),
+    var(--lyric-primary, #d8f1ff) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter:
+    drop-shadow(0 0 calc(var(--lyric-glow-blur, 0) * 1px) var(--lyric-glow, rgba(138, 190, 255, 0.32)))
+    drop-shadow(0 2px 22px rgba(0, 0, 0, 0.38));
+  will-change: background-image, filter;
+}
+
+.topography-center-lyric-line.topography-center-lyric-particles {
+  filter:
+    drop-shadow(0 0 calc((var(--lyric-glow-blur, 0) + var(--lyric-glow-beat, 0) * 18) * 1px) var(--lyric-glow, rgba(138, 190, 255, 0.32)))
+    drop-shadow(0 2px 22px rgba(0, 0, 0, 0.38));
+}
+
+.topography-center-lyric-in {
+  animation: topography-lyric-in 720ms cubic-bezier(0.16, 0.84, 0.32, 1.02) forwards;
+}
+
+@keyframes topography-lyric-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 @keyframes immersive-lyric-in {
   from {
     opacity: 0;

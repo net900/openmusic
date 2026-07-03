@@ -5,6 +5,7 @@ import GalaxyBeatMapDriver from '../galaxy/GalaxyBeatMapDriver';
 import GalaxyGestureSceneBridge from '../galaxy/GalaxyGestureSceneBridge';
 import GestureHudOverlay from '../galaxy/GestureHudOverlay';
 import TopographyAudioDriver from './TopographyAudioDriver';
+import TopographyCenterLyrics from './TopographyCenterLyrics';
 import TopographyMapScene from './TopographyMapScene';
 import { DEFAULT_TOPOGRAPHY_CAMERA_STATE } from './lib/topographySceneDefaults';
 
@@ -23,6 +24,7 @@ export default function TopographyBackground3D({
   return (
     <div className={`${className} overflow-hidden bg-[#08090b]`} aria-hidden>
       <GestureHudOverlay />
+      <TopographyCenterLyrics />
       <Canvas
         className="!absolute inset-0 h-full w-full"
         style={{ width: '100%', height: '100%', display: 'block' }}
