@@ -7,7 +7,10 @@ import { installOpenMusicDebug } from './lib/debugTools';
 import { installVisibilitySync } from './lib/visibilitySync';
 import { applyPageSeo } from './lib/seo';
 import { ensureSessionBootstrap } from './lib/sessionBootstrap';
+import { preloadAllLyricFonts } from './lib/lyricFonts';
 import { warmUpSocketSession } from './hooks/useSocket';
+
+preloadAllLyricFonts();
 
 function initMineradioControlGlassSurface() {
   const normalizeOffset = (value: number) => String(-Math.round(value));

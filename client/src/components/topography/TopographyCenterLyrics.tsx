@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useSmoothPlaybackTime } from '../../hooks/useSmoothPlaybackTime';
 import { useTrackLyrics } from '../../hooks/useTrackLyrics';
 import { clampPlaybackTime, useTrackDuration } from '../../hooks/useTrackDuration';
+import { ensureLyricFontLoaded, lyricFontDataAttr } from '../../lib/lyricFonts';
 import { getCachedGalaxyAudioBands } from '../galaxy/lib/galaxyAudio';
 import {
   lyricFontStackForKey,
@@ -29,6 +30,7 @@ export default function TopographyCenterLyrics() {
   const duration = useTrackDuration(current);
   const displayTime = clampPlaybackTime(currentTime, duration);
   const [fxRevision, setFxRevision] = useState(0);
+  const [fontRevision, setFontRevision] = useState(0);
   const lineRef = useRef<HTMLParagraphElement>(null);
   const beatGlowRef = useRef(0);
 
@@ -36,8 +38,19 @@ export default function TopographyCenterLyrics() {
   useEffect(() => subscribeStageLyricPalette(() => setFxRevision((v) => v + 1)), []);
 
   const fx = roomVisualFxLive.current;
+  const lyricFontKey = normalizeLyricFontKey(fx.lyricFont);
   const palette = stageLyricPaletteLive.palette;
   const enabled = fx.particleLyrics;
+
+  useEffect(() => {
+    let cancelled = false;
+    void ensureLyricFontLoaded(fx).then(() => {
+      if (!cancelled) setFontRevision((v) => v + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [lyricFontKey, fx.lyricWeight, fxRevision]);
 
   const active = getActiveLyricWithProgress(lyrics, displayTime);
 
@@ -83,17 +96,21 @@ export default function TopographyCenterLyrics() {
   const lineHeight = lyricLineHeightFactor(fx);
   const glowBlur = topographyLyricGlowBlurPx(fx, beatGlowRef.current);
   const layoutTransform = buildTopographyLyricTransform(fx);
+  const fontWeight = lyricFontWeightValue(fx);
+  const fontFamily = lyricFontStackForKey(lyricFontKey);
+  const stoneClass = lyricFontKey === 'stone-song' ? ' topography-center-lyric-stone' : '';
 
   return (
     <div className="topography-center-lyrics" aria-hidden>
       <div className="topography-center-lyric-transform" style={layoutTransform}>
         <p
           ref={lineRef}
-          key={active.text}
-          className={`topography-center-lyric-line topography-center-lyric-in${fx.lyricGlowParticles ? ' topography-center-lyric-particles' : ''}`}
+          key={`${active.text}:${lyricFontKey}:${fontRevision}`}
+          data-lyric-font={lyricFontDataAttr(lyricFontKey)}
+          className={`topography-center-lyric-line topography-center-lyric-in${fx.lyricGlowParticles ? ' topography-center-lyric-particles' : ''}${stoneClass}`}
           style={{
-            fontFamily: lyricFontStackForKey(normalizeLyricFontKey(fx.lyricFont)),
-            fontWeight: lyricFontWeightValue(fx),
+            fontFamily,
+            fontWeight,
             letterSpacing: letterSpacing ? `${letterSpacing}px` : undefined,
             lineHeight,
             ['--lyric-primary' as string]: palette.primary,

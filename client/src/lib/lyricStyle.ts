@@ -291,7 +291,7 @@ export function normalizeLyricFontKey(value: unknown): LyricFontKey {
   return 'sans';
 }
 
-/** Mineradio lyricFontStackForKey */
+/** Mineradio lyricFontStackForKey — Web 可加载字体置前，系统字体作回退 */
 export function lyricFontStackForKey(key: LyricFontKey): string {
   switch (normalizeLyricFontKey(key)) {
     case 'hei':
@@ -299,30 +299,37 @@ export function lyricFontStackForKey(key: LyricFontKey): string {
     case 'song':
       return '"Noto Serif SC","Source Han Serif SC",SimSun,"Songti SC",serif';
     case 'bold-song':
-      return '"Source Han Serif SC Heavy","Source Han Serif SC","Noto Serif SC Black","Noto Serif SC","STZhongsong","SimSun",serif';
+      return '"Noto Serif SC","Source Han Serif SC Heavy","Source Han Serif SC","STZhongsong","SimSun",serif';
     case 'stone-song':
-      return '"FZYaSongS-B-GB","FZCuSong-B09S","Source Han Serif SC Heavy","Noto Serif SC Black","STZhongsong","SimSun",serif';
+      return '"Noto Serif SC","FZYaSongS-B-GB","FZCuSong-B09S","STZhongsong","SimSun",serif';
     case 'kai-song':
-      return '"Kaiti SC","STKaiti","KaiTi","Source Han Serif SC","Noto Serif SC",serif';
+      return '"LXGW WenKai","Kaiti SC","STKaiti","KaiTi","Noto Serif SC",serif';
     case 'serif-en':
       return 'Georgia,"Times New Roman","Noto Serif SC","Source Han Serif SC",serif';
     case 'gothic':
-      return '"UnifrakturCook","UnifrakturMaguntia","Old English Text MT","Blackletter","Cinzel Decorative","Noto Serif SC",serif';
+      return '"UnifrakturCook","UnifrakturMaguntia","Cinzel Decorative","Old English Text MT","Noto Serif SC",serif';
     case 'editorial':
-      return '"Didot","Bodoni 72","Libre Baskerville",Georgia,"Noto Serif SC",serif';
+      return '"Libre Baskerville","Didot","Bodoni 72",Georgia,"Noto Serif SC",serif';
     case 'humanist':
-      return '"Avenir Next","Segoe UI","Inter","Noto Sans SC","PingFang SC",sans-serif';
+      return 'Inter,"Avenir Next","Segoe UI","Noto Sans SC","PingFang SC",sans-serif';
     case 'mono':
       return '"JetBrains Mono",Consolas,"Noto Sans SC","Microsoft YaHei",monospace';
     case 'display':
-      return '"Alibaba PuHuiTi","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif';
+      return '"Noto Sans SC","Alibaba PuHuiTi","PingFang SC","Microsoft YaHei",sans-serif';
     default:
       return 'Inter,"Noto Sans SC","PingFang SC","Microsoft YaHei",Arial,sans-serif';
   }
 }
 
 export function lyricFontWeightValue(fx: RoomVisualFxSettings): number {
-  if (normalizeLyricFontKey(fx.lyricFont) === 'stone-song') return 900;
+  const key = normalizeLyricFontKey(fx.lyricFont);
+  if (key === 'stone-song' || key === 'bold-song') return 900;
+  if (key === 'display') {
+    return Math.max(
+      700,
+      Math.round(clampRange(Number(fx.lyricWeight) || 900, 500, 900) / 50) * 50,
+    );
+  }
   return Math.round(clampRange(Number(fx.lyricWeight) || 900, 500, 900) / 50) * 50;
 }
 

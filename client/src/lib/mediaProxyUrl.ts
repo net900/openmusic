@@ -46,6 +46,33 @@ export function shouldProxyMediaUrl(url: string): boolean {
   return /^https?:\/\//i.test(url);
 }
 
+export function isInsecureRemoteMediaUrl(url: string): boolean {
+  if (!url) return false;
+  try {
+    return new URL(url).protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+export function isHttpsPageContext(): boolean {
+  return typeof window !== 'undefined' && window.location.protocol === 'https:';
+}
+
+/** HTTPS 页面播放 HTTP 直链会被混合内容策略拦截 */
+export function shouldProxyInsecurePlaybackUrl(url: string): boolean {
+  return isHttpsPageContext() && isInsecureRemoteMediaUrl(url);
+}
+
+/**
+ * 播放地址是否应走同源代理：
+ * - 沉浸/Web Audio 频谱模式
+ * - HTTPS 站点上的 HTTP 音频（如酷狗直链）
+ */
+export function shouldProxyPlaybackUrl(url: string, visualModeProxy = false): boolean {
+  return visualModeProxy || shouldProxyInsecurePlaybackUrl(url);
+}
+
 /**
  * Meting `type=pic` 外链 → 同源 `/api/meting`（走重定向与缩略图，勿经 media-proxy）
  */

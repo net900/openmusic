@@ -1,4 +1,5 @@
 import { getSongUrl, getTrackKey } from '../api/music';
+import { isHttpsPageContext } from './mediaProxyUrl';
 import { shouldProxySongPlaybackUrl } from './roomVisualPreset';
 import {
   getLowestQuality,
@@ -108,12 +109,19 @@ function getEffectivePlaybackQuality(song: Pick<QueueItem, 'queueId' | 'id' | 's
   return getUserPlaybackQuality(source);
 }
 
+function songLikelyNeedsPlaybackProxy(song: Pick<QueueItem, 'source' | 'url'>): boolean {
+  if (shouldProxySongPlaybackUrl()) return true;
+  if (!isHttpsPageContext()) return false;
+  if (songSourceOf(song) === 'kugou') return true;
+  return Boolean(song.url?.trim().startsWith('http://'));
+}
+
 function urlCacheKey(
-  song: Pick<QueueItem, 'queueId' | 'id' | 'source'>,
+  song: Pick<QueueItem, 'queueId' | 'id' | 'source' | 'url'>,
   quality?: string,
 ) {
   const effective = quality ?? getEffectivePlaybackQuality(song);
-  const proxyTag = shouldProxySongPlaybackUrl() ? 'proxy' : 'direct';
+  const proxyTag = songLikelyNeedsPlaybackProxy(song) ? 'proxy' : 'direct';
   return `${trackKeyOf(song)}:${effective || 'default'}:${proxyTag}`;
 }
 
@@ -347,4 +355,4 @@ export function prefetchQueueSongs(
     void fetchSongUrl(song);
   }
 }
-
+

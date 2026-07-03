@@ -4,7 +4,7 @@ import { providers, getAllSources } from './sources';
 import { interleaveSearchResults } from './merge';
 import { hasValidLrc, fetchFallbackLrc } from './lrcFallback';
 import { fetchWithTimeout } from '../http';
-import { toProxiedMediaUrl, toLocalMetingPicUrl } from '../../lib/mediaProxyUrl';
+import { toProxiedMediaUrl, toLocalMetingPicUrl, shouldProxyPlaybackUrl } from '../../lib/mediaProxyUrl';
 import { shouldProxySongPlaybackUrl } from '../../lib/roomVisualPreset';
 import { getUserPlaybackQuality } from './quality';
 import { resizeCoverUrl, type CoverSize } from '../../lib/coverUrl';
@@ -76,7 +76,7 @@ export async function getSongUrl(
   const source = song.source || 'netease';
   const quality = qualityOverride ?? getUserPlaybackQuality(source);
   const url = await getProvider(source).getSongUrl({ ...song, source }, quality);
-  const useProxy = options?.proxy ?? shouldProxySongPlaybackUrl();
+  const useProxy = options?.proxy ?? shouldProxyPlaybackUrl(url, shouldProxySongPlaybackUrl());
   return useProxy ? toProxiedMediaUrl(url) : url;
 }
 

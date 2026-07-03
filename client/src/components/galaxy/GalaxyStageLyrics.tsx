@@ -7,6 +7,7 @@ import { useTrackLyrics } from '../../hooks/useTrackLyrics';
 import { roomVisualFxLive, subscribeRoomVisualFx } from '../../lib/roomVisualFxLive';
 import { subscribeStageLyricPalette } from '../../lib/stageLyricPaletteLive';
 import { useRoomStore } from '../../stores/roomStore';
+import { ensureLyricFontLoaded } from '../../lib/lyricFonts';
 import { getGalaxyBeatCameraKick } from './lib/galaxyCinema';
 import { getCachedGalaxyAudioBands, resumeGalaxyAudioContext } from './lib/galaxyAudio';
 import {
@@ -43,9 +44,22 @@ export default function GalaxyStageLyrics({ isPlaying, spatialAnchor = 'galaxy' 
   const prevLineRef = useRef<string | null>(null);
   const worldPosRef = useRef(new THREE.Vector3());
   const [fxRevision, setFxRevision] = useState(0);
+  const [fontRevision, setFontRevision] = useState(0);
 
   useEffect(() => subscribeRoomVisualFx(() => setFxRevision((v) => v + 1)), []);
   useEffect(() => subscribeStageLyricPalette(() => setFxRevision((v) => v + 1)), []);
+
+  const fx = roomVisualFxLive.current;
+
+  useEffect(() => {
+    let cancelled = false;
+    void ensureLyricFontLoaded(fx).then(() => {
+      if (!cancelled) setFontRevision((v) => v + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [fx.lyricFont, fx.lyricWeight, fxRevision]);
 
   const stageRoot = useMemo(() => {
     const root = createStageLyricRoot();
@@ -57,7 +71,7 @@ export default function GalaxyStageLyrics({ isPlaying, spatialAnchor = 'galaxy' 
     if (!currentLine) return null;
     const mask = buildLyricMaskAsset(currentLine);
     return buildLyricMesh(mask);
-  }, [currentLine, fxRevision]);
+  }, [currentLine, fxRevision, fontRevision]);
 
   useEffect(() => {
     if (spatialAnchor !== 'topography') return;

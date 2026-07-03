@@ -1170,7 +1170,6 @@ html.control-glass-svg-ok #search-box {
   text-align: center;
   white-space: pre-wrap;
   word-break: break-word;
-  font-weight: 700;
   font-size: clamp(30px, 5.2vw, 72px);
   color: transparent;
   background-image: linear-gradient(
@@ -1187,6 +1186,14 @@ html.control-glass-svg-ok #search-box {
     drop-shadow(0 0 calc(var(--lyric-glow-blur, 0) * 1px) var(--lyric-glow, rgba(138, 190, 255, 0.32)))
     drop-shadow(0 2px 22px rgba(0, 0, 0, 0.38));
   will-change: background-image, filter;
+}
+
+.topography-center-lyric-line.topography-center-lyric-stone {
+  letter-spacing: 0.02em;
+  filter:
+    contrast(1.08)
+    drop-shadow(0 0 calc(var(--lyric-glow-blur, 0) * 1px) var(--lyric-glow, rgba(138, 190, 255, 0.32)))
+    drop-shadow(0 2px 22px rgba(0, 0, 0, 0.38));
 }
 
 .topography-center-lyric-line.topography-center-lyric-particles {
@@ -2163,15 +2170,72 @@ body.immersive-mode #hand-canvas {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+/* 歌词字体预览 + 地形模式 DOM 歌词共用 */
+[data-lyric-font='sans'],
+.fx-font-grid button[data-font='sans'] {
+  font-family: Inter, 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif;
+}
+
+[data-lyric-font='hei'],
+.fx-font-grid button[data-font='hei'] {
+  font-family: 'Noto Sans SC', 'Microsoft YaHei', SimHei, 'PingFang SC', sans-serif;
+}
+
+[data-lyric-font='song'],
+.fx-font-grid button[data-font='song'] {
+  font-family: 'Noto Serif SC', 'Source Han Serif SC', SimSun, 'Songti SC', serif;
+}
+
+[data-lyric-font='bold-song'],
+.fx-font-grid button[data-font='bold-song'] {
+  font-family: 'Noto Serif SC', 'Source Han Serif SC', STZhongsong, SimSun, serif;
+  font-weight: 900;
+}
+
+[data-lyric-font='stone-song'],
+.fx-font-grid button[data-font='stone-song'] {
+  font-family: 'Noto Serif SC', FZYaSongS-B-GB, STZhongsong, SimSun, serif;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+[data-lyric-font='kai-song'],
+.fx-font-grid button[data-font='kai-song'] {
+  font-family: 'LXGW WenKai', 'Kaiti SC', STKaiti, KaiTi, 'Noto Serif SC', serif;
+}
+
+[data-lyric-font='serif-en'],
+.fx-font-grid button[data-font='serif-en'] {
+  font-family: Georgia, 'Times New Roman', 'Noto Serif SC', serif;
+}
+
+[data-lyric-font='gothic'],
 .fx-font-grid button[data-font='gothic'] {
-  font-family: 'UnifrakturCook', 'UnifrakturMaguntia', 'Old English Text MT', 'Blackletter', 'Cinzel Decorative', serif;
+  font-family: 'UnifrakturCook', 'UnifrakturMaguntia', 'Cinzel Decorative', 'Old English Text MT', 'Noto Serif SC', serif;
   font-size: 12.5px;
 }
 
-.fx-font-grid button[data-font='stone-song'],
-.fx-font-grid button[data-font='bold-song'] {
-  font-family: 'Source Han Serif SC', 'Noto Serif SC', 'STZhongsong', 'SimSun', serif;
-  font-weight: 800;
+[data-lyric-font='editorial'],
+.fx-font-grid button[data-font='editorial'] {
+  font-family: 'Libre Baskerville', Didot, 'Bodoni 72', Georgia, 'Noto Serif SC', serif;
+}
+
+[data-lyric-font='humanist'],
+.fx-font-grid button[data-font='humanist'] {
+  font-family: Inter, 'Avenir Next', 'Segoe UI', 'Noto Sans SC', 'PingFang SC', sans-serif;
+}
+
+[data-lyric-font='mono'],
+.fx-font-grid button[data-font='mono'] {
+  font-family: 'JetBrains Mono', Consolas, 'Noto Sans SC', monospace;
+  font-size: 10.5px;
+  letter-spacing: -0.02em;
+}
+
+[data-lyric-font='display'],
+.fx-font-grid button[data-font='display'] {
+  font-family: 'Noto Sans SC', 'Alibaba PuHuiTi', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-weight: 700;
 }
 
 .fx-font-grid button:hover {
