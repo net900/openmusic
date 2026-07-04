@@ -89,7 +89,7 @@ interface AudioRuntime {
   tempRetries: MutableRefObject<number>;
   lowestFallbackAttempted: MutableRefObject<boolean>;
   successRecordedTrackKey: MutableRefObject<string | null>;
-  stallRetryTimer: MutableRefObject<ReturnType<typeof setTimeout> | null>;
+  stallRetryTimer: MutableRefObject<number | null>;
   requestSkip: () => void;
   finishSong: (queueId: string) => void;
   playAudio: (audio: HTMLAudioElement) => Promise<PlayResult>;
@@ -176,7 +176,7 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
   const tempRetries = useRef(0);
   const lowestFallbackAttempted = useRef(false);
   const successRecordedTrackKey = useRef<string | null>(null);
-  const stallRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stallRetryTimer = useRef<number | null>(null);
   const lastSkipAt = useRef(0);
   const wasLeaderRef = useRef(isPlaybackLeader);
 

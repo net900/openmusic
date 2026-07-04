@@ -47,7 +47,7 @@ let lastTvJoinSession: JoinSession | null = null;
 let activeJoinMode: 'normal' | 'tv' | null = null;
 let rejoinInFlight = false;
 let joinGeneration = 0;
-let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let reconnectTimer: number | null = null;
 let reconnectAttempt = 0;
 
 function getSocket(): Socket {
