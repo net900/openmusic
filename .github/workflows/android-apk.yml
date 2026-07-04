@@ -57,9 +57,13 @@ jobs:
           fi
         working-directory: client
 
+      - name: Prepare APK
+        run: cp "client/android/app/build/outputs/apk/${{ inputs.build_type }}/"*.apk openmusic.apk
+        working-directory: .
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: openmusic-${{ inputs.build_type }}-${{ github.run_number }}
-          path: client/android/app/build/outputs/apk/${{ inputs.build_type }}/*.apk
+          path: openmusic.apk
           if-no-files-found: error

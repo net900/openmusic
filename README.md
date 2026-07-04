@@ -33,6 +33,7 @@
 * 🔗 房间分享（含邀请者、当前歌曲；密码房链接可带密码直达进房）
 * 🕐 最近访问房间
 * 🔄 Redis 持久化支持（可选）
+* 📱 Android 客户端（Capacitor 远程 URL 壳，桌面端首页可下载 APK）
 
 ### 房间点歌规则（房主 / 管理员）
 
@@ -133,6 +134,54 @@ REDIS_URL=redis://127.0.0.1:6379/0 # 可选，房间持久化
 
 ---
 
+## 📱 Android 客户端
+
+采用 **Capacitor 远程 URL 模式**：App 内 WebView 直接打开线上站点（与 `server/.env` 中的 `CLIENT_URL` 一致）。前端更新只需部署服务器，**不必每次改代码都重打 APK**。
+
+### 1. 配置远程地址
+
+```bash
+cd client
+cp .env.capacitor.example .env.capacitor
+```
+
+编辑 `client/.env.capacitor`：
+
+```env
+CAPACITOR_SERVER_URL=https://your-domain.com
+```
+
+须为 **HTTPS**（局域网调试可用 `http://`，会自动开启 cleartext）。
+
+### 2. GitHub Actions 云端打包（推荐，无需 Android Studio）
+
+工作流文件：`.github/workflows/android-apk.yml`
+
+1. 将代码 push 到 GitHub
+2. 打开仓库 **Actions** → **Android APK** → **Run workflow**
+3. 填写参数：
+   - `server_url`：与 `CLIENT_URL` 一致，例如 `https://your-domain.com`
+   - `build_type`：选 **`debug`**（可直接安装；`release` 未签名，部分手机装不了）
+4. 等待构建完成，在运行结果底部 **Artifacts** 下载 `openmusic-*.zip`
+5. **解压 zip**，得到 `openmusic.apk`（不要直接把 zip 当 APK 安装）
+
+> Artifacts 默认保留约 90 天，不会自动上传到你的服务器。
+
+### 3. 部署 APK 供用户下载
+
+将解压后的 APK 上传到服务器：
+
+```text
+server/downloads/openmusic.apk
+```
+
+重启 Node 服务后，下载地址为：
+
+`https://your-domain.com/downloads/openmusic.apk`
+
+首页右上角 **Android** 按钮指向此地址，且仅在**桌面端**显示，手机浏览器访问时不显示。
+
+
 ## 🛠 技术栈
 
 ### Frontend
@@ -142,6 +191,7 @@ REDIS_URL=redis://127.0.0.1:6379/0 # 可选，房间持久化
 * TailwindCSS
 * Socket.IO Client
 * Three.js / React Three Fiber（房间视觉背景、沉浸模式 3D 场景）
+* Capacitor（Android 远程 URL 壳）
 
 ### Backend
 

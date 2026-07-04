@@ -6,6 +6,7 @@ dist/
 release/
 server/.env
 client/.env.capacitor
+server/downloads/*.apk
 
 # Capacitor / Android 本地构建产物
 client/android/.gradle/

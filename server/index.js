@@ -7,6 +7,7 @@ import cors from 'cors';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import {
@@ -911,6 +912,31 @@ app.post('/api/chat/upload-token', (req, res) => {
 
 const clientDist = path.join(__dirname, '../client/dist');
 
+function resolveAndroidApkPath() {
+  const candidates = [
+    path.join(__dirname, 'downloads/openmusic.apk'),
+    path.join(clientDist, 'downloads/openmusic.apk'),
+    path.join(clientDist, 'downloads/apk'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+function sendAndroidApk(req, res) {
+  const apkPath = resolveAndroidApkPath();
+  if (!apkPath) {
+    return res.status(404).type('text/plain; charset=utf-8').send(
+      'APK 尚未部署。请将 GitHub Actions 构建的 app-debug.apk 上传到 server/downloads/openmusic.apk',
+    );
+  }
+  res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+  res.download(apkPath, 'openmusic.apk');
+}
+
+app.get('/downloads/openmusic.apk', sendAndroidApk);
+
 app.get('/robots.txt', (req, res) => {
   const origin = resolveSiteOrigin(req, ALLOWED_ORIGINS);
   res.type('text/plain').send(buildRobotsTxt(origin));
@@ -923,7 +949,9 @@ app.get('/sitemap.xml', (req, res) => {
 
 app.use(express.static(clientDist));
 app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) return next();
+  if (req.path.startsWith('/api') || req.path.startsWith('/socket.io') || req.path.startsWith('/downloads/')) {
+    return next();
+  }
   res.sendFile(path.join(clientDist, 'index.html'), (err) => {
     if (err) next();
   });
