@@ -156,18 +156,38 @@ function resetGalaxyAudioBandsState(): void {
   resetRealtimeBeatEngine();
 }
 
+function resumeAudioContext(): void {
+  if (wired && audioCtx) {
+    void audioCtx.resume();
+    return;
+  }
+  const node = ensureAnalyser();
+  if (node?.context && 'resume' in node.context) {
+    void (node.context as AudioContext).resume();
+  }
+}
+
 function attachPlayListener(): void {
   if (playListenerAttached) return;
   playListenerAttached = true;
   const audio = getSharedAudio();
-  const resume = () => {
-    const node = ensureAnalyser();
-    if (node?.context && 'resume' in node.context) {
-      void (node.context as AudioContext).resume();
-    }
-  };
-  audio.addEventListener('play', resume);
-  audio.addEventListener('playing', resume);
+  audio.addEventListener('play', resumeAudioContext);
+  audio.addEventListener('playing', resumeAudioContext);
+}
+
+/** Web Audio 已劫持播放元素时，确保输出链路仍通向扬声器（退出沉浸/切回封面后仍需调用） */
+export function ensureGalaxyAudioOutput(): void {
+  resumeAudioContext();
+}
+
+/** 丢弃共享 audio 元素前调用，避免新元素仍被视为已接入 Web Audio */
+export function resetGalaxyAudioWire(): void {
+  wired = false;
+  playListenerAttached = false;
+}
+
+export function isGalaxyAudioWired(): boolean {
+  return wired;
 }
 
 function connectSourceToAnalysers(source: AudioNode): void {
@@ -228,10 +248,7 @@ function ensureAnalyser(): AnalyserNode | null {
 }
 
 export function resumeGalaxyAudioContext(): void {
-  const node = ensureAnalyser();
-  if (node?.context && 'resume' in node.context) {
-    void (node.context as AudioContext).resume();
-  }
+  ensureGalaxyAudioOutput();
 }
 
 function envFollow(prev: number, next: number, attack: number, release: number): number {

@@ -20,6 +20,15 @@ export function rememberRoomPassword(roomId: string, password?: string): void {
   }
 }
 
+export function clearStoredRoomPassword(roomId?: string): void {
+  if (!roomId) return;
+  try {
+    sessionStorage.removeItem(roomPasswordStorageKey(roomId));
+  } catch {
+    // ignore
+  }
+}
+
 /** 从分享链接 query 读取房间密码（支持 pwd / password） */
 export function parseRoomPasswordFromSearch(search: string): string | undefined {
   if (!search) return undefined;

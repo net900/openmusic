@@ -18,12 +18,16 @@ import {
   createFloatingSongCardMesh,
   disposeFloatingSongCardMesh,
   drawFloatingSongCard,
+  getFloatingSongCardSideLayout,
+  getShelfSideAnchor,
   hitTestFloatingSongCardAction,
+  projectWorldToNdc,
   type FloatingSongCardAction,
   type FloatingSongCardActionId,
   type FloatingSongCardActionRegion,
   type FloatingSongCardItem,
 } from './lib/galaxyFloatingSongCard';
+import type { RoomVisualFxSettings } from '../../lib/roomVisualPreset';
 
 const CLICK_THRESHOLD = 6;
 const SHELF_VISIBLE_RADIUS = 5;
@@ -36,23 +40,52 @@ type CardSlot = ReturnType<typeof createFloatingSongCardMesh>;
 function makeCardFocusZone(
   mode: 'side' | 'stage',
   index: number,
+  offsets?: Pick<RoomVisualFxSettings, 'shelfOffsetX' | 'shelfOffsetY' | 'shelfOffsetZ'>,
 ): { theta: number; phi: number; radius: number; lookAt: THREE.Vector3; ease: number } {
+  const ox = offsets?.shelfOffsetX ?? 0;
+  const oy = offsets?.shelfOffsetY ?? 0;
+  const oz = offsets?.shelfOffsetZ ?? 0;
   if (mode === 'stage') {
     return {
       theta: -0.08 + index * 0.08,
       phi: -0.2,
       radius: 4.36 + Math.min(index, 2) * 0.08,
-      lookAt: new THREE.Vector3((index - 1.5) * 0.72, -1.28, 0.86 - index * 0.03),
+      lookAt: new THREE.Vector3((index - 1.5) * 0.72 + ox, -1.28 + oy, 0.86 - index * 0.03 + oz),
       ease: 0.1,
     };
   }
+  const anchor = getShelfSideAnchor(ox, oy, oz);
   return {
     theta: 0.28,
     phi: -0.04 + (1.5 - index) * 0.025,
     radius: 4.74 + Math.min(index, 3) * 0.05,
-    lookAt: new THREE.Vector3(1.78, 0.22 - index * 0.9, 0.84 - index * 0.08),
+    lookAt: new THREE.Vector3(anchor.x - 1.4, anchor.y + 0.22 - index * 0.9, anchor.z - index * 0.08),
     ease: 0.1,
   };
+}
+
+function isPointerNearShelfSide(
+  pointer: THREE.Vector2,
+  camera: THREE.Camera,
+  fx: RoomVisualFxSettings,
+): boolean {
+  const layout = getFloatingSongCardSideLayout();
+  const anchor = projectWorldToNdc(
+    getShelfSideAnchor(fx.shelfOffsetX, fx.shelfOffsetY, fx.shelfOffsetZ),
+    camera,
+  );
+  const narrow = typeof window !== 'undefined' && window.innerWidth < 980;
+  const marginX = (narrow ? 0.24 : 0.28) * fx.shelfSize;
+  const marginY = (0.34 + layout.sideYStep * 0.18) * fx.shelfSize;
+  return Math.abs(pointer.x - anchor.x) < marginX
+    && Math.abs(pointer.y - anchor.y) < marginY;
+}
+
+function syncVisibleShelfMatrices(meshes: THREE.Mesh[]): void {
+  for (const mesh of meshes) {
+    if (!mesh.visible) continue;
+    mesh.updateMatrixWorld(true);
+  }
 }
 
 export default function GalaxyFloatingSongCard() {
@@ -199,11 +232,12 @@ export default function GalaxyFloatingSongCard() {
       if (rect.width <= 0 || rect.height <= 0) return null;
       const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
       const ny = -(((clientY - rect.top) / rect.height) * 2 - 1);
-      raycasterRef.current.setFromCamera(new THREE.Vector2(nx, ny), camera);
       const objects = cardsRef.current
         .map((card) => card.mesh)
         .filter((mesh) => mesh.visible)
         .sort((a, b) => (b.renderOrder || 0) - (a.renderOrder || 0));
+      syncVisibleShelfMatrices(objects);
+      raycasterRef.current.setFromCamera(new THREE.Vector2(nx, ny), camera);
       const hits = raycasterRef.current.intersectObjects(objects, false);
       if (!hits.length) return null;
       const hit = hits[0];
@@ -249,12 +283,15 @@ export default function GalaxyFloatingSongCard() {
 
   const isShelfWheelZone = useCallback((clientX: number, clientY: number) => {
     const rect = gl.domElement.getBoundingClientRect();
-    const nx = (clientX - rect.left) / Math.max(1, rect.width);
-    const ny = (clientY - rect.top) / Math.max(1, rect.height);
+    const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const ny = -(((clientY - rect.top) / rect.height) * 2 - 1);
     const fx = roomVisualFxLive.current;
-    if (fx.shelfMode === 'stage') return ny > 0.6;
-    return nx > 0.72 && Math.abs(ny - 0.5) < 0.42;
-  }, [gl]);
+    if (fx.shelfMode === 'stage') {
+      const ny01 = (clientY - rect.top) / Math.max(1, rect.height);
+      return ny01 > 0.6;
+    }
+    return isPointerNearShelfSide(new THREE.Vector2(nx, ny), camera, fx);
+  }, [camera, gl]);
 
   useEffect(() => {
     const canvas = gl.domElement;
@@ -350,6 +387,7 @@ export default function GalaxyFloatingSongCard() {
       fx.shelfAccentColor || (fx.visualTintMode === 'custom' ? fx.visualTintColor : fx.visualTintColor || '#00f5d4');
     const centerIndex = centerSmoothRef.current;
     const centerRounded = Math.round(centerIndex);
+    const shelfMode = fx.shelfMode === 'stage' ? 'stage' : 'side';
 
     raycastFrameRef.current += 1;
     const pointerMoved =
@@ -367,7 +405,9 @@ export default function GalaxyFloatingSongCard() {
       raycasterRef.current.setFromCamera(pointer, camera);
       const visibleMeshes = cardsRef.current
         .map((card) => card.mesh)
-        .filter((mesh) => mesh.visible);
+        .filter((mesh) => mesh.visible)
+        .sort((a, b) => (b.renderOrder || 0) - (a.renderOrder || 0));
+      syncVisibleShelfMatrices(visibleMeshes);
       const intersections = raycasterRef.current.intersectObjects(visibleMeshes, false);
       const hoveredMesh = intersections[0]?.object as THREE.Mesh | undefined;
       hoveredIndex = hoveredMesh ? Number(hoveredMesh.userData.cardIndex ?? -1) : -1;
@@ -384,14 +424,13 @@ export default function GalaxyFloatingSongCard() {
       hoveredActionRef.current = hoveredAction;
     }
 
+    const nearShelfSide = shelfMode === 'side' && isPointerNearShelfSide(pointer, camera, fx);
     const sidePresenceTarget =
       fx.shelfPresence === 'always'
         ? 1
-        : pointer.x > 0.42 && Math.abs(pointer.y) < 0.78
+        : nearShelfSide || hoveredIndex >= 0
           ? 1
-          : hoveredIndex >= 0
-            ? 1
-            : 0;
+          : 0;
     const stagePresenceTarget =
       fx.shelfPresence === 'always'
         ? 1
@@ -400,7 +439,7 @@ export default function GalaxyFloatingSongCard() {
           : hoveredIndex >= 0
             ? 1
             : 0;
-    const presenceTarget = fx.shelfMode === 'stage' ? stagePresenceTarget : sidePresenceTarget;
+    const presenceTarget = shelfMode === 'stage' ? stagePresenceTarget : sidePresenceTarget;
     presenceRef.current += (presenceTarget - presenceRef.current) * 0.08;
 
     const dynamicCamera = fx.shelfCameraMode === 'dynamic';
@@ -410,14 +449,13 @@ export default function GalaxyFloatingSongCard() {
       !hoveredActionRef.current &&
       pointerDownRef.current === null;
     if (focusCard) {
-      const hoverZone = makeCardFocusZone(fx.shelfMode === 'stage' ? 'stage' : 'side', centerRounded);
+      const hoverZone = makeCardFocusZone(shelfMode, centerRounded, fx);
       setGalaxyOrbitFocusZone(galaxyOrbitRef.current, 'cardHover', { ...hoverZone });
     } else if (galaxyOrbitRef.current.focusZone.type === 'cardHover') {
       setGalaxyOrbitFocusZone(galaxyOrbitRef.current, 'none');
     }
 
     gl.domElement.style.cursor = hoveredIndex >= 0 ? 'pointer' : '';
-    const shelfMode = fx.shelfMode === 'stage' ? 'stage' : 'side';
 
     for (let i = 0; i < count; i += 1) {
       const entry = displayItems[i];
@@ -445,11 +483,16 @@ export default function GalaxyFloatingSongCard() {
         breathWeight: Math.max(0.35, presenceRef.current),
       });
 
-      if (!pose.visible) continue;
+      if (!pose.visible) {
+        mesh.visible = false;
+        continue;
+      }
+      mesh.visible = true;
 
       mesh.renderOrder = 60 + Math.round((SHELF_VISIBLE_RADIUS + 1 - Math.min(pose.absD, SHELF_VISIBLE_RADIUS + 1)) * 10)
         + (isCenter ? 24 : 0)
         + (isHovered ? 12 : 0);
+      mesh.updateMatrixWorld(true);
 
       const item: FloatingSongCardItem = {
         ...entry.item,

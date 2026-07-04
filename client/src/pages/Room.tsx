@@ -35,7 +35,7 @@ import QueuePanel from '../components/QueuePanel';
 
 import MiniPlayer from '../components/MiniPlayer';
 import ImmersiveExitModal from '../components/immersive/ImmersiveExitModal';
-import ImmersiveEntryOverlay from '../components/immersive/ImmersiveEntryOverlay';
+import ImmersiveTransitionOverlay from '../components/immersive/ImmersiveTransitionOverlay';
 
 import RoomAmbientBackground from '../components/RoomAmbientBackground';
 
@@ -89,6 +89,7 @@ import {
   getStoredRoomPassword,
   parseRoomPasswordFromSearch,
   rememberRoomPassword,
+  clearStoredRoomPassword,
   stripRoomPasswordFromSearch,
 } from '../lib/roomPassword';
 import RoomVisualFxPanel from '../components/RoomVisualFxPanel';
@@ -118,7 +119,20 @@ import {
   patchRoomVisualFx,
   roomVisualFxLive,
 } from '../lib/roomVisualFxLive';
-import { prepareImmersiveEnter } from '../lib/immersiveEntry';
+import { resetSharedAudioElement } from '../lib/audioElement';
+import { ensureGalaxyAudioOutput } from '../components/galaxy/lib/galaxyAudio';
+import { useAudioStore } from '../stores/audioStore';
+import {
+  createEnterSteps,
+  createExitSteps,
+  ensureMinimumLoadingDuration,
+  IMMERSIVE_REVEAL_IN_MS,
+  IMMERSIVE_REVEAL_OUT_MS,
+  immersiveTimingCssVars,
+  runImmersiveEnterPrep,
+  runImmersiveExitPrep,
+  type ImmersiveTransitionState,
+} from '../lib/immersiveTransition';
 
 
 function mapImportedSource(source: unknown): MusicSource {
@@ -268,9 +282,9 @@ export default function Room() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [hotRefreshKey, setHotRefreshKey] = useState(0);
   const [immersiveExitPromptOpen, setImmersiveExitPromptOpen] = useState(false);
-  const [immersiveEntering, setImmersiveEntering] = useState(false);
-  const [immersiveRevealing, setImmersiveRevealing] = useState(false);
-  const immersiveEnteringRef = useRef(false);
+  const [immersiveTransition, setImmersiveTransition] = useState<ImmersiveTransitionState | null>(null);
+  const [immersiveShellMotion, setImmersiveShellMotion] = useState<'entering' | 'exiting' | null>(null);
+  const immersiveTransitionRef = useRef(false);
   const [visualMode, setVisualMode] = useState<RoomVisualMode>(readRoomVisualMode);
   const [immersivePanelFocus, setImmersivePanelFocus] = useState<'search' | 'queue' | 'chat' | null>(null);
   const [visualFx, setVisualFx] = useState<RoomVisualFxSettings>(() => {
@@ -558,6 +572,14 @@ export default function Room() {
       if (cancelled) return;
       if (!res.success) {
         if (res.needsPassword) {
+          const sentPassword = Boolean(roomPassword?.trim());
+          if (sentPassword) {
+            clearStoredRoomPassword(roomId);
+            setNeedsPasswordPrompt(false);
+            setJoinError(res.error || '密码错误');
+            redirectTimer = window.setTimeout(() => navigate('/'), 2000);
+            return;
+          }
           setNeedsPasswordPrompt(true);
           setIgnoreUrlPassword(true);
           setJoinError(res.error || '请输入房间密码');
@@ -1142,40 +1164,92 @@ export default function Room() {
   }, [pureMode, setPureModeEnabled, setImmersiveModeEnabled, searchMode, roomPageTitle, showToast]);
 
   const applyVisualMode = useCallback(
-    (mode: RoomVisualMode, options?: { notifyProxyChange?: boolean }) => {
+    (mode: RoomVisualMode, options?: { notifyProxyChange?: boolean; reloadAudio?: boolean }) => {
       if (!isLgUp) return;
       const prevNeedsProxy = shouldProxySongPlaybackUrl(visualMode);
       const nextNeedsProxy = shouldProxySongPlaybackUrl(mode);
       setVisualMode(mode);
       writeRoomVisualMode(mode);
-      if (options?.notifyProxyChange !== false && prevNeedsProxy !== nextNeedsProxy && room?.current) {
-        showToast('背景已切换，音频设置将在下一首歌曲生效', 'success');
+      const shouldReloadAudio = options?.reloadAudio !== false;
+      if (shouldReloadAudio && prevNeedsProxy !== nextNeedsProxy && room?.current) {
+        resetSharedAudioElement();
+        useAudioStore.getState().requestTrackReload();
+        if (options?.notifyProxyChange !== false) {
+          showToast('背景已切换，当前歌曲正在重新加载', 'success');
+        }
       }
     },
     [isLgUp, room?.current, showToast, visualMode],
   );
 
-  const handleImmersiveExitKeepBackground = useCallback(() => {
+  const runImmersiveExit = useCallback(async (kind: 'keep-bg' | 'cover-bg') => {
+    if (immersiveTransitionRef.current) return;
+    immersiveTransitionRef.current = true;
     setImmersiveExitPromptOpen(false);
-    setImmersiveModeEnabled(false);
-    setVisualFxOpen(false);
-    showToast('已退出沉浸模式，保留当前动态背景', 'success');
-  }, [setImmersiveModeEnabled, showToast]);
+
+    const liveRoom = useRoomStore.getState().room;
+    const currentSong = liveRoom?.current ?? null;
+    const initialSteps = createExitSteps(kind === 'cover-bg');
+    const startedAt = Date.now();
+
+    setImmersiveTransition({
+      direction: 'exit',
+      phase: 'loading',
+      steps: initialSteps,
+    });
+
+    try {
+      await runImmersiveExitPrep({
+        kind,
+        song: currentSong,
+        visualMode,
+        steps: initialSteps,
+        applyVisualMode,
+        onStepsChange: (steps) => {
+          setImmersiveTransition((prev) => (prev ? { ...prev, steps } : prev));
+        },
+      });
+
+      await ensureMinimumLoadingDuration(startedAt);
+
+      setImmersiveTransition((prev) => (prev ? { ...prev, phase: 'reveal' } : prev));
+      setImmersiveShellMotion('exiting');
+      ensureGalaxyAudioOutput();
+
+      await new Promise((resolve) => window.setTimeout(resolve, IMMERSIVE_REVEAL_OUT_MS));
+
+      setImmersiveModeEnabled(false);
+      setVisualFxOpen(false);
+      setImmersivePanelFocus(null);
+
+      showToast(
+        kind === 'cover-bg' ? '已退出沉浸模式，并切回封面背景' : '已退出沉浸模式，保留当前动态背景',
+        'success',
+      );
+    } catch (error) {
+      console.error('Failed to exit immersive mode:', error);
+      showToast('退出沉浸模式失败，请重试', 'error');
+    } finally {
+      immersiveTransitionRef.current = false;
+      setImmersiveTransition(null);
+      setImmersiveShellMotion(null);
+    }
+  }, [applyVisualMode, setImmersiveModeEnabled, showToast, visualMode]);
+
+  const handleImmersiveExitKeepBackground = useCallback(() => {
+    void runImmersiveExit('keep-bg');
+  }, [runImmersiveExit]);
 
   const handleImmersiveExitToCover = useCallback(() => {
-    setImmersiveExitPromptOpen(false);
-    applyVisualMode('cover-bg', { notifyProxyChange: false });
-    setImmersiveModeEnabled(false);
-    setVisualFxOpen(false);
-    showToast('已退出沉浸模式，并切回封面背景', 'success');
-  }, [applyVisualMode, setImmersiveModeEnabled, showToast]);
+    void runImmersiveExit('cover-bg');
+  }, [runImmersiveExit]);
 
   const handleImmersiveToggle = useCallback(() => {
     if (immersiveMode) {
       setImmersiveExitPromptOpen(true);
       return;
     }
-    if (immersiveEnteringRef.current) return;
+    if (immersiveTransitionRef.current) return;
 
     const liveRoom = useRoomStore.getState().room;
     const currentSong = liveRoom?.current ?? null;
@@ -1185,34 +1259,48 @@ export default function Room() {
       Boolean(currentSong)
       && shouldProxySongPlaybackUrl(targetMode)
       && !shouldProxySongPlaybackUrl(visualMode);
+    const needsCover = Boolean(currentSong);
+    const initialSteps = createEnterSteps(needsCover, needsProxyReload);
+    const startedAt = Date.now();
 
-    immersiveEnteringRef.current = true;
-    setImmersiveEntering(true);
-    setImmersiveRevealing(false);
+    immersiveTransitionRef.current = true;
+    setImmersiveTransition({
+      direction: 'enter',
+      phase: 'loading',
+      steps: initialSteps,
+    });
 
     void (async () => {
       try {
-        if (needsModeSwitch) {
-          applyVisualMode('emily', { notifyProxyChange: false });
-        }
-
-        await prepareImmersiveEnter({
+        await runImmersiveEnterPrep({
           song: currentSong,
           needsProxyReload,
+          needsCover,
+          needsModeSwitch,
+          steps: initialSteps,
+          applyVisualMode: (mode, opts) => applyVisualMode(mode, { ...opts, reloadAudio: false }),
+          onStepsChange: (steps) => {
+            setImmersiveTransition((prev) => (prev ? { ...prev, steps } : prev));
+          },
         });
 
+        await ensureMinimumLoadingDuration(startedAt);
+
+        setImmersiveTransition((prev) => (prev ? { ...prev, phase: 'reveal' } : prev));
+        setImmersiveShellMotion('entering');
         setImmersiveModeEnabled(true);
         setVisualFxOpen(false);
-        setImmersiveRevealing(true);
-        await new Promise((resolve) => window.setTimeout(resolve, 720));
+        ensureGalaxyAudioOutput();
+
+        await new Promise((resolve) => window.setTimeout(resolve, IMMERSIVE_REVEAL_IN_MS));
         showToast('已进入沉浸模式', 'success');
       } catch (error) {
         console.error('Failed to enter immersive mode:', error);
         showToast('沉浸模式加载失败，请重试', 'error');
       } finally {
-        immersiveEnteringRef.current = false;
-        setImmersiveRevealing(false);
-        setImmersiveEntering(false);
+        immersiveTransitionRef.current = false;
+        setImmersiveTransition(null);
+        setImmersiveShellMotion(null);
       }
     })();
   }, [
@@ -1746,11 +1834,13 @@ export default function Room() {
 
   return (
 
-    <div className="relative isolate flex h-full flex-col overflow-hidden">
+    <div
+      className="relative isolate flex h-full flex-col overflow-hidden"
+      style={immersiveTransition || immersiveShellMotion ? immersiveTimingCssVars() : undefined}
+    >
 
-      <ImmersiveEntryOverlay
-        visible={immersiveEntering}
-        revealing={immersiveRevealing}
+      <ImmersiveTransitionOverlay
+        transition={immersiveTransition}
         coverUrl={room.current ? getCoverUrl(room.current, 'medium') : null}
       />
 
@@ -1763,7 +1853,17 @@ export default function Room() {
 
       {immersiveMode && (
         <RoomImmersiveShell
-          onExit={() => setImmersiveExitPromptOpen(true)}
+          className={
+            immersiveShellMotion === 'entering'
+              ? 'is-shell-entering'
+              : immersiveShellMotion === 'exiting'
+                ? 'is-shell-exiting'
+                : undefined
+          }
+          onExit={() => {
+            if (immersiveTransition) return;
+            setImmersiveExitPromptOpen(true);
+          }}
           onPanelFocusChange={setImmersivePanelFocus}
           searchBar={immersiveSearchBar}
           searchExtras={immersiveSearchExtras}
@@ -2035,7 +2135,7 @@ export default function Room() {
                   <button
                     type="button"
                     onClick={handleImmersiveToggle}
-                    disabled={immersiveEntering}
+                    disabled={Boolean(immersiveTransition)}
                     className={`flex items-center gap-1.5 text-xs transition-colors px-2.5 sm:px-3 py-1.5 rounded-lg hover:bg-netease-card disabled:opacity-50 disabled:pointer-events-none ${
                       immersiveMode ? 'text-violet-300' : 'text-netease-muted hover:text-white'
                     }`}

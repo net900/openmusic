@@ -12,6 +12,7 @@ const BOTTOM_BAR_CLOSE_DELAY_MS = 420;
 const FX_FAB_PEEK_DELAY_MS = 1100;
 
 interface Props {
+  className?: string;
   onExit: () => void;
   onPanelFocusChange?: (panel: 'search' | 'queue' | 'chat' | null) => void;
   searchBar: ReactNode;
@@ -56,6 +57,7 @@ function EdgeHint({
 }
 
 export default function RoomImmersiveShell({
+  className,
   onExit,
   onPanelFocusChange,
   searchBar,
@@ -294,7 +296,7 @@ export default function RoomImmersiveShell({
   }, []);
 
   return (
-    <div className="room-immersive-mode fixed inset-0 z-40 pointer-events-none">
+    <div className={`room-immersive-mode fixed inset-0 z-40 pointer-events-none${className ? ` ${className}` : ''}`}>
       <div
         className="absolute inset-x-0 bottom-0 h-[88px] bg-gradient-to-t from-black/14 to-transparent"
         aria-hidden

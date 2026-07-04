@@ -1541,6 +1541,363 @@ body.immersive-mode #hand-canvas {
   font-family: ui-monospace, monospace;
 }
 
+.immersive-transition-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: auto;
+  opacity: 0;
+  animation: immersive-transition-fade-in var(--immersive-fade-in, 880ms) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.immersive-transition-overlay.is-loading {
+  pointer-events: auto;
+}
+
+.immersive-transition-overlay.is-revealing {
+  pointer-events: none;
+}
+
+.immersive-transition-overlay.is-enter.is-revealing {
+  animation: immersive-transition-enter-reveal var(--immersive-reveal-in, 1680ms) cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.immersive-transition-overlay.is-exit.is-revealing {
+  animation: immersive-transition-exit-reveal var(--immersive-reveal-out, 1560ms) cubic-bezier(0.55, 0, 0.45, 1) forwards;
+}
+
+.immersive-transition-noise {
+  position: absolute;
+  inset: 0;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+.immersive-transition-cover {
+  position: absolute;
+  inset: -18%;
+  background-position: center;
+  background-size: cover;
+  filter: blur(36px) saturate(1.2) brightness(0.72);
+  transform: scale(1.12);
+  opacity: 0.62;
+  animation: immersive-transition-cover-drift 8s ease-in-out infinite alternate;
+}
+
+.immersive-transition-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 72% 58% at 50% 42%, transparent 0%, rgba(0, 0, 0, 0.55) 100%);
+  pointer-events: none;
+}
+
+.immersive-transition-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 90% 70% at 50% 38%, rgba(88, 28, 135, 0.28), transparent 68%),
+    radial-gradient(ellipse 60% 40% at 80% 20%, rgba(0, 245, 212, 0.08), transparent 55%),
+    linear-gradient(180deg, rgba(8, 9, 11, 0.55) 0%, rgba(8, 9, 11, 0.94) 100%);
+  pointer-events: none;
+}
+
+.immersive-transition-iris {
+  position: absolute;
+  inset: 0;
+  background: #08090b;
+  mask-image: radial-gradient(circle at 50% 50%, transparent 0%, transparent 42%, #000 58%);
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent 0%, transparent 42%, #000 58%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.immersive-transition-overlay.is-enter.is-revealing .immersive-transition-iris {
+  animation: immersive-transition-iris-open var(--immersive-reveal-in, 1680ms) cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.immersive-transition-overlay.is-exit.is-revealing .immersive-transition-iris {
+  opacity: 1;
+  mask-image: radial-gradient(circle at 50% 50%, transparent 0%, transparent 0%, #000 0%);
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent 0%, transparent 0%, #000 0%);
+  animation: immersive-transition-iris-close var(--immersive-reveal-out, 1560ms) cubic-bezier(0.55, 0, 0.45, 1) forwards;
+}
+
+.immersive-transition-content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 40px 28px;
+  min-width: min(360px, calc(100vw - 48px));
+  border-radius: 24px;
+  background: rgba(10, 11, 16, 0.58);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  backdrop-filter: blur(22px) saturate(1.15);
+  -webkit-backdrop-filter: blur(22px) saturate(1.15);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+    0 28px 90px rgba(0, 0, 0, 0.52),
+    0 0 80px rgba(88, 28, 135, 0.12);
+  animation: immersive-transition-panel-in var(--immersive-panel-in, 1040ms) cubic-bezier(0.16, 1, 0.3, 1) 0.12s both;
+}
+
+.immersive-transition-ring-wrap {
+  position: relative;
+  width: 108px;
+  height: 108px;
+  margin-bottom: 4px;
+}
+
+.immersive-transition-ring {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.immersive-transition-ring-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 3;
+}
+
+.immersive-transition-ring-progress {
+  fill: none;
+  stroke: rgba(196, 181, 253, 0.92);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition: stroke-dashoffset var(--immersive-step-transition, 620ms) cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.immersive-transition-ring-wrap::before {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, rgba(196, 181, 253, 0.14), transparent 65%);
+  pointer-events: none;
+}
+
+.immersive-transition-ring-core {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.immersive-transition-percent {
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.immersive-transition-spark {
+  width: 28px;
+  height: 28px;
+  color: rgba(196, 181, 253, 0.95);
+  animation: immersive-transition-spark-pulse 1.2s ease-in-out infinite;
+}
+
+.immersive-transition-label {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.immersive-transition-hint {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.immersive-transition-steps {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.immersive-transition-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.38);
+  transition: color var(--immersive-step-transition, 620ms) ease;
+}
+
+.immersive-transition-step.is-active {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.immersive-transition-step.is-done {
+  color: rgba(167, 243, 208, 0.78);
+}
+
+.immersive-transition-step.is-error {
+  color: rgba(252, 165, 165, 0.9);
+}
+
+.immersive-transition-step-dot {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--immersive-step-transition, 620ms) ease;
+}
+
+.immersive-transition-step.is-active .immersive-transition-step-dot {
+  border-color: rgba(196, 181, 253, 0.55);
+  box-shadow: 0 0 12px rgba(196, 181, 253, 0.35);
+  animation: immersive-transition-step-pulse 1.4s ease-in-out infinite;
+}
+
+.immersive-transition-step.is-done .immersive-transition-step-dot {
+  border-color: rgba(52, 211, 153, 0.45);
+  background: rgba(52, 211, 153, 0.12);
+  color: rgba(110, 231, 183, 0.95);
+}
+
+.immersive-transition-step.is-done .immersive-transition-step-dot svg {
+  width: 11px;
+  height: 11px;
+}
+
+.room-immersive-mode.is-shell-entering {
+  animation: immersive-shell-enter var(--immersive-reveal-in, 1680ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.room-immersive-mode.is-shell-exiting {
+  animation: immersive-shell-exit var(--immersive-reveal-out, 1560ms) cubic-bezier(0.55, 0, 0.45, 1) both;
+}
+
+@keyframes immersive-transition-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes immersive-transition-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes immersive-transition-cover-drift {
+  from { transform: scale(1.12) translate(0, 0); }
+  to { transform: scale(1.16) translate(-1.5%, -1%); }
+}
+
+@keyframes immersive-transition-enter-reveal {
+  0% { opacity: 1; }
+  72% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes immersive-transition-exit-reveal {
+  0% { opacity: 1; }
+  78% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes immersive-transition-iris-open {
+  0% {
+    opacity: 1;
+    mask-image: radial-gradient(circle at 50% 50%, transparent 0%, transparent 0%, #000 0%);
+    -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent 0%, transparent 0%, #000 0%);
+  }
+  100% {
+    opacity: 1;
+    mask-image: radial-gradient(circle at 50% 50%, transparent 0%, transparent 72%, #000 100%);
+    -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent 0%, transparent 72%, #000 100%);
+  }
+}
+
+@keyframes immersive-transition-iris-close {
+  0% {
+    opacity: 0.15;
+    mask-image: radial-gradient(circle at 50% 50%, transparent 0%, transparent 72%, #000 100%);
+    -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent 0%, transparent 72%, #000 100%);
+  }
+  100% {
+    opacity: 1;
+    mask-image: radial-gradient(circle at 50% 50%, transparent 0%, transparent 0%, #000 0%);
+    -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent 0%, transparent 0%, #000 0%);
+  }
+}
+
+@keyframes immersive-transition-spark-pulse {
+  0%, 100% { opacity: 0.75; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
+@keyframes immersive-transition-step-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+
+@keyframes immersive-shell-enter {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+@keyframes immersive-shell-exit {
+  from {
+    opacity: 1;
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    filter: blur(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .immersive-transition-overlay,
+  .immersive-transition-cover,
+  .immersive-transition-content,
+  .immersive-transition-iris,
+  .room-immersive-mode.is-shell-entering,
+  .room-immersive-mode.is-shell-exiting {
+    animation: none !important;
+  }
+
+  .immersive-transition-ring-progress {
+    transition: none;
+  }
+}
+
+/* @deprecated 旧版沉浸进入层，保留选择器兼容 */
 .immersive-entry-overlay {
   position: fixed;
   inset: 0;

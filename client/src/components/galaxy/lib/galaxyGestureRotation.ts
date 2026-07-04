@@ -1,7 +1,7 @@
 /** Mineradio gestureRotation / particleSpin — 拖拽旋转粒子层 */
 
 import type * as THREE from 'three';
-import { galaxyOrbitRef } from './galaxyOrbit';
+import { galaxyOrbitRef, recenterGalaxyOrbit } from './galaxyOrbit';
 
 const PARTICLE_POINTER_SPIN_X = 0.0032;
 const PARTICLE_POINTER_SPIN_Y = 0.0034;
@@ -63,6 +63,12 @@ export function resetParticleRotationTarget(syncVisual = false): void {
   if (syncVisual && particleRootGroup) {
     particleRootGroup.rotation.set(0, 0, 0);
   }
+}
+
+/** Mineradio recenterCamera — 镜头回正并清空拖拽旋转残留 */
+export function recenterGalaxyView(): void {
+  recenterGalaxyOrbit(galaxyOrbitRef.current);
+  resetParticleRotationTarget(true);
 }
 
 let particleRootGroup: THREE.Object3D | null = null;

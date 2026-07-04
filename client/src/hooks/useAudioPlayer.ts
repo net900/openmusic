@@ -29,6 +29,8 @@ import {
   isRestrictedAutoplayEnv,
   type PlayResult,
 } from '../lib/audioUnlock';
+import { sharedAudioGeneration } from '../lib/audioElement';
+import { ensureGalaxyAudioOutput } from '../components/galaxy/lib/galaxyAudio';
 import {
   prefetchUpcomingFromRoom,
   rememberSongUrl,
@@ -59,6 +61,7 @@ import {
 } from '../lib/audioTrackBinding';
 
 let audioListenersAttached = false;
+let audioListenersTarget: HTMLAudioElement | null = null;
 
 /** 播放中低频漂移校准（非 RAF，避免高频 seek） */
 const CALIBRATION_INTERVAL_MS = 6000;
@@ -326,8 +329,9 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
       applyPlaybackResult,
     };
 
-    if (!audioListenersAttached) {
+    if (!audioListenersAttached || audioListenersTarget !== audio) {
       audioListenersAttached = true;
+      audioListenersTarget = audio;
       attachAudioBufferingListeners(audio);
 
       audio.addEventListener('ended', () => {
@@ -442,6 +446,7 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
             }
           }
         }
+        ensureGalaxyAudioOutput();
         markAudioSessionUnlocked();
         useAudioStore.getState().setNeedsAudioUnlock(false);
         const live = useRoomStore.getState().room;
@@ -703,6 +708,7 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
     room?.current?.source,
     loadRetryNonce,
     trackReloadNonce,
+    sharedAudioGeneration,
     tvMode,
     initAudio,
     controller,

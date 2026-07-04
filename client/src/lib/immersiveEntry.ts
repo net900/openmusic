@@ -17,6 +17,7 @@ import { getClientPlaybackState, getPlaybackTime } from './playbackState';
 import { invalidateTrackUrlCache, resolveSongUrl } from './songPreloadCache';
 import { useAudioStore } from '../stores/audioStore';
 import { useRoomStore } from '../stores/roomStore';
+import { ensureGalaxyAudioOutput } from '../components/galaxy/lib/galaxyAudio';
 
 const TRACK_READY_POLL_MS = 50;
 const TRACK_READY_TIMEOUT_MS = 20000;
@@ -29,6 +30,8 @@ function preloadImage(url: string): Promise<void> {
     img.src = url;
   });
 }
+
+export { preloadImage };
 
 export function preloadGalaxyBackground(): Promise<unknown> {
   return import('../components/galaxy/GalaxyBackground3D');
@@ -55,6 +58,29 @@ async function waitForCurrentTrackProxyReady(
   }
 
   throw new Error('immersive track proxy timeout');
+}
+
+/** 曲目 load 完成（进入/退出过渡通用） */
+export async function waitForCurrentTrackReady(
+  song: QueueItem,
+  timeoutMs = TRACK_READY_TIMEOUT_MS,
+): Promise<void> {
+  const audio = getSharedAudio();
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    const loading = useAudioStore.getState().trackLoading;
+    const src = audio.currentSrc || audio.src || '';
+    const bound = isAudioBoundToQueue(audio, song.queueId);
+
+    if (!loading && bound && src && audio.readyState >= HTMLMediaElement.HAVE_METADATA) {
+      return;
+    }
+
+    await new Promise((resolve) => window.setTimeout(resolve, TRACK_READY_POLL_MS));
+  }
+
+  throw new Error('immersive track ready timeout');
 }
 
 function capSeekTime(time: number, song: QueueItem, mediaDur: number): number {
@@ -102,6 +128,20 @@ export interface PrepareImmersiveEnterOptions {
   needsProxyReload: boolean;
 }
 
+/** 代理音源切换与播放对齐（进入沉浸专用） */
+export async function reloadImmersiveTrackProxy(song: QueueItem): Promise<void> {
+  invalidateTrackUrlCache(song);
+  useAudioStore.getState().requestTrackReload();
+  await new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()));
+  });
+  await resolveSongUrl(song, { refresh: true });
+  await waitForCurrentTrackProxyReady(song);
+  await waitForAudioMinimumReady(getSharedAudio());
+  await syncRoomPlaybackAfterProxyReload(song);
+  ensureGalaxyAudioOutput();
+}
+
 /** 进入沉浸模式前预加载 Galaxy chunk、封面与（如需）代理音源 */
 export async function prepareImmersiveEnter(options: PrepareImmersiveEnterOptions): Promise<void> {
   const { song, needsProxyReload } = options;
@@ -114,18 +154,9 @@ export async function prepareImmersiveEnter(options: PrepareImmersiveEnterOption
   }
 
   if (needsProxyReload && song) {
-    invalidateTrackUrlCache(song);
-    tasks.push((async () => {
-      useAudioStore.getState().requestTrackReload();
-      await new Promise<void>((resolve) => {
-        window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()));
-      });
-      await resolveSongUrl(song, { refresh: true });
-      await waitForCurrentTrackProxyReady(song);
-      await waitForAudioMinimumReady(getSharedAudio());
-      await syncRoomPlaybackAfterProxyReload(song);
-    })());
+    tasks.push(reloadImmersiveTrackProxy(song));
   }
 
   await Promise.all(tasks);
+  ensureGalaxyAudioOutput();
 }

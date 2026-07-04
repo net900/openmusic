@@ -2,6 +2,7 @@ import { markBufferingEnd, markBufferingStart, resetSyncStateMachine } from './s
 
 let waitingFlag = false;
 let listenersAttached = false;
+let bufferingListenersTarget: HTMLAudioElement | null = null;
 let bufferEndHandler: ((audio: HTMLAudioElement) => void) | null = null;
 
 function onBufferStart(): void {
@@ -27,8 +28,10 @@ export function isAudioBuffering(audio: HTMLAudioElement): boolean {
 }
 
 export function attachAudioBufferingListeners(audio: HTMLAudioElement): void {
-  if (listenersAttached) return;
+  if (listenersAttached && bufferingListenersTarget === audio) return;
   listenersAttached = true;
+  bufferingListenersTarget = audio;
+  waitingFlag = false;
 
   audio.addEventListener('waiting', onBufferStart);
   audio.addEventListener('stalled', onBufferStart);

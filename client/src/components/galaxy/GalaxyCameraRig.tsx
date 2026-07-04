@@ -14,7 +14,6 @@ import { tickGalaxyCinema } from './lib/galaxyCinema';
 
 import {
   applyGalaxyOrbitCinema,
-  recenterGalaxyOrbit,
   setGalaxyOrbitFocusZone,
   setGalaxyOrbitPreset,
   updateGalaxyOrbitCamera,
@@ -64,7 +63,6 @@ export default function GalaxyCameraRig({ preset, immersivePanelFocus = null }: 
       });
     } else {
       setGalaxyOrbitFocusZone(orbit, 'none');
-      recenterGalaxyOrbit(orbit);
     }
   }, [immersivePanelFocus]);
 

@@ -390,6 +390,45 @@ export function disposeFloatingSongCardMesh(mesh: THREE.Mesh): void {
   mesh.geometry.dispose();
 }
 
+export function getFloatingSongCardSideLayout(): {
+  sideX: number;
+  sideY: number;
+  sideZ: number;
+  sideYStep: number;
+  sideZStep: number;
+} {
+  const narrow = typeof window !== 'undefined' && window.innerWidth < 980;
+  const portrait = typeof window !== 'undefined' && window.innerHeight > window.innerWidth;
+  return {
+    sideX: portrait ? 1.56 : narrow ? 2.48 : 3.18,
+    sideY: 0,
+    sideZ: portrait ? 0.78 : 0.86,
+    sideYStep: portrait ? 0.58 : 0.74,
+    sideZStep: portrait ? 0.15 : 0.19,
+  };
+}
+
+/** 歌单架 side 模式交互锚点（居中卡片），用于屏幕命中区域推算 */
+export function getShelfSideAnchor(
+  offsetX = 0,
+  offsetY = 0,
+  offsetZ = 0,
+): THREE.Vector3 {
+  const layout = getFloatingSongCardSideLayout();
+  return new THREE.Vector3(
+    layout.sideX + offsetX,
+    layout.sideY + offsetY,
+    layout.sideZ + offsetZ,
+  );
+}
+
+export function projectWorldToNdc(
+  world: THREE.Vector3,
+  camera: THREE.Camera,
+): THREE.Vector3 {
+  return world.clone().project(camera);
+}
+
 /** Mineradio shelf side 布局 — 桌面 emily 预设 */
 export function applyFloatingSongCardPose(
   mesh: THREE.Mesh,
@@ -409,12 +448,13 @@ export function applyFloatingSongCardPose(
     breathWeight?: number;
   },
 ): { visible: boolean; absD: number } {
+  const layout = getFloatingSongCardSideLayout();
   const narrow = typeof window !== 'undefined' && window.innerWidth < 980;
   const portrait = typeof window !== 'undefined' && window.innerHeight > window.innerWidth;
   const mode = config?.mode ?? 'side';
-  const sideX = portrait ? 1.56 : narrow ? 2.48 : 3.18;
-  const sideY = 0;
-  const sideZ = portrait ? 0.78 : 0.86;
+  const sideX = layout.sideX;
+  const sideY = layout.sideY;
+  const sideZ = layout.sideZ;
   const sideRotY = portrait ? 0.12 : 0.28;
   const sideRotX = portrait ? 0.022 : 0.042;
   const sideScale = portrait ? 0.7 : narrow ? 0.86 : 1.0;
@@ -467,8 +507,8 @@ export function applyFloatingSongCardPose(
   }
 
   const sideXStep = portrait ? 0.15 : 0.18;
-  const sideYStep = portrait ? 0.58 : 0.74;
-  const sideZStep = portrait ? 0.15 : 0.19;
+  const sideYStep = layout.sideYStep;
+  const sideZStep = layout.sideZStep;
   let px = sideX + absD * sideXStep + entry * 0.22 + offsetX;
   let py = sideY - delta * sideYStep + (1 - reveal) * (delta < 0 ? -0.18 : 0.18) + offsetY;
   let pz = sideZ - absD * sideZStep - (1 - reveal) * 0.2 + offsetZ;

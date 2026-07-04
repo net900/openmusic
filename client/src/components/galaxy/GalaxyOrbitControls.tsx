@@ -4,6 +4,7 @@ import {
   applyParticleSpinDrag,
   particlePointerSpin,
   particleSpin,
+  recenterGalaxyView,
   resetParticleRotationTarget,
 } from './lib/galaxyGestureRotation';
 import {
@@ -14,7 +15,6 @@ import {
 } from './lib/galaxyParticlePointer';
 import {
   galaxyOrbitRef,
-  recenterGalaxyOrbit,
   unlockGalaxyOrbitCenter,
   zoomGalaxyOrbit,
 } from './lib/galaxyOrbit';
@@ -52,7 +52,9 @@ export default function GalaxyOrbitControls({ preset }: Props) {
       particleSpin.vx = 0;
       particleSpin.vy = 0;
       mouseDownAt.current = { x: e.clientX, y: e.clientY, hadDrag: false };
+      const wasLocked = orbit.centerLocked;
       unlockGalaxyOrbitCenter(orbit);
+      if (wasLocked) resetParticleRotationTarget(true);
     };
 
     const onPointerMove = (e: PointerEvent) => {
@@ -98,14 +100,15 @@ export default function GalaxyOrbitControls({ preset }: Props) {
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      const wasLocked = orbit.centerLocked;
       unlockGalaxyOrbitCenter(orbit);
+      if (wasLocked) resetParticleRotationTarget(true);
       zoomGalaxyOrbit(orbit, e.deltaY);
     };
 
     const onDblClick = (e: MouseEvent) => {
       e.preventDefault();
-      recenterGalaxyOrbit(orbit);
-      resetParticleRotationTarget(true);
+      recenterGalaxyView();
     };
 
     canvas.addEventListener('pointerdown', beginDrag);
