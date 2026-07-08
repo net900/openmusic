@@ -33,10 +33,16 @@ export function formatChatTime(timestamp: number): string {
   }
 }
 
+export function isChatStickerMessage(imageUrl?: string | null, imageKey?: string | null) {
+  if (!imageUrl) return false;
+  if (!imageKey) return true;
+  return String(imageKey).startsWith('local-sticker:');
+}
+
 export function compactReplyText(text: string, imageUrl?: string | null, imageKey?: string | null) {
   const normalized = text.replace(/\s+/g, ' ').trim();
   if (normalized) return normalized.slice(0, 48);
-  if (imageUrl) return imageKey ? '[图片]' : '[表情包]';
+  if (imageUrl) return isChatStickerMessage(imageUrl, imageKey) ? '[表情包]' : '[图片]';
   return '';
 }
 

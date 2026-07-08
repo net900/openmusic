@@ -1,3 +1,5 @@
+import { fetchMeting, formatMetingFetchError } from './metingFetch.js';
+
 const METING_API_URL = (process.env.METING_API_URL ).replace(/\/$/, '');
 const METING_API_AUTH = process.env.METING_API_AUTH || '';
 
@@ -15,13 +17,7 @@ const FM_MODES = new Set([
 ]);
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
+  return fetchMeting(url, options, timeoutMs);
 }
 
 export function normalizeFmMode(input) {
@@ -100,7 +96,7 @@ export async function fetchMetingFmSong(fmMode = DEFAULT_FM_MODE) {
       const song = normalizeFmSong(data);
       if (song) return song;
     } catch (err) {
-      console.error('Meting FM error:', err.message);
+      console.error('Meting FM error:', formatMetingFetchError(err));
     }
   }
   return null;

@@ -15,6 +15,8 @@ import Tooltip from './Tooltip';
 import RoleBadge from './RoleBadge';
 import QFaceImage from './QFaceImage';
 import StickerSearchPanel, { STICKER_SEARCH_PICKER_HEIGHT } from './StickerSearchPanel';
+import { isInsideModalRoot } from './Modal';
+import UserStickerPanel from './UserStickerPanel';
 import { renderReplyRefContent } from './ChatMessageRow';
 import type { ChatRoomMeta } from './ChatMessageRow';
 import {
@@ -118,7 +120,7 @@ const ChatInputBar = forwardRef<ChatInputBarHandle, Props>(function ChatInputBar
   const [qqFaces, setQQFaces] = useState<QFaceItem[]>(() => getInitialQQFaces());
   const [loadingFaces, setLoadingFaces] = useState(() => !hasFullQQFaces());
   const [emojiGridRoot, setEmojiGridRoot] = useState<HTMLDivElement | null>(null);
-  const [emojiPickerTab, setEmojiPickerTab] = useState<'faces' | 'search'>('faces');
+  const [emojiPickerTab, setEmojiPickerTab] = useState<'faces' | 'search' | 'wechat'>('faces');
   const [uploadingImage, setUploadingImage] = useState(false);
   const [hasDraft, setHasDraft] = useState(false);
 
@@ -164,6 +166,7 @@ const ChatInputBar = forwardRef<ChatInputBarHandle, Props>(function ChatInputBar
       const target = event.target as Node;
       if (emojiPanelRef.current?.contains(target)) return;
       if (emojiPickerPortalRef.current?.contains(target)) return;
+      if (isInsideModalRoot(target)) return;
       setShowEmoji(false);
     };
     document.addEventListener('pointerdown', handlePointerDown);
@@ -320,6 +323,18 @@ const ChatInputBar = forwardRef<ChatInputBarHandle, Props>(function ChatInputBar
     setSending(false);
   };
 
+  const finishStickerSend = (currentReplyTo: ChatReplyRef | null, success: boolean, errorMessage?: string) => {
+    if (!success) {
+      onReplyChange(currentReplyTo);
+      setError(errorMessage || '发送失败');
+      setSending(false);
+      throw new Error(errorMessage || '发送失败');
+    }
+    setSending(false);
+    setShowEmoji(false);
+    setEmojiPickerTab('faces');
+  };
+
   const handleSendSticker = async (imageUrl: string) => {
     if (chatMuted || sending) throw new Error(chatMuted ? '当前无法发送' : '正在发送');
 
@@ -330,16 +345,20 @@ const ChatInputBar = forwardRef<ChatInputBarHandle, Props>(function ChatInputBar
     setError('');
 
     const res = await sendChat('', { imageUrl, replyTo: currentReplyTo });
-    if (!res.success) {
-      onReplyChange(currentReplyTo);
-      setError(res.error || '发送失败');
-      setSending(false);
-      throw new Error(res.error || '发送失败');
-    }
+    finishStickerSend(currentReplyTo, res.success, res.error);
+  };
 
-    setSending(false);
-    setShowEmoji(false);
-    setEmojiPickerTab('faces');
+  const handleSendWechatSticker = async (imageUrl: string, imageKey: string) => {
+    if (chatMuted || sending) throw new Error(chatMuted ? '当前无法发送' : '正在发送');
+
+    const currentReplyTo = replyTo;
+    onStickToBottom();
+    onReplyChange(null);
+    setSending(true);
+    setError('');
+
+    const res = await sendChat('', { imageUrl, imageKey, replyTo: currentReplyTo });
+    finishStickerSend(currentReplyTo, res.success, res.error);
   };
 
   const deleteTextBeforeCursor = (count: number) => {
@@ -427,6 +446,44 @@ const ChatInputBar = forwardRef<ChatInputBarHandle, Props>(function ChatInputBar
     focus: () => inputRef.current?.focus(),
   }), [applyReplyMention]);
 
+  const renderEmojiTabBar = () => (
+    <div className="mb-1.5 flex flex-shrink-0 items-center justify-between px-1">
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => setEmojiPickerTab('faces')}
+          className={`rounded-lg px-2 py-0.5 text-[11px] transition-colors ${emojiPickerTab === 'faces' ? 'bg-white/10 text-white' : 'text-netease-muted hover:bg-white/5 hover:text-white'}`}
+        >
+          QQ
+        </button>
+        <button
+          type="button"
+          onClick={() => setEmojiPickerTab('wechat')}
+          className={`rounded-lg px-2 py-0.5 text-[11px] transition-colors ${emojiPickerTab === 'wechat' ? 'bg-white/10 text-white' : 'text-netease-muted hover:bg-white/5 hover:text-white'}`}
+        >
+          表情包
+        </button>
+      </div>
+      <div className="flex items-center gap-1.5">
+        {stickerSearchEnabled && emojiPickerTab !== 'search' && (
+          <Tooltip content="搜索表情包">
+            <button
+              type="button"
+              onClick={() => setEmojiPickerTab('search')}
+              className="rounded-lg p-1 text-netease-muted transition-colors hover:bg-white/10 hover:text-white"
+              aria-label="搜索表情包"
+            >
+              <Search className="h-3.5 w-3.5" />
+            </button>
+          </Tooltip>
+        )}
+        {emojiPickerTab === 'faces' && loadingFaces && (
+          <span className="text-[11px] text-netease-muted/60">正在补全...</span>
+        )}
+      </div>
+    </div>
+  );
+
   const renderEmojiPickerContent = (gridClassName: string) => {
     if (emojiPickerTab === 'search') {
       return (
@@ -438,28 +495,21 @@ const ChatInputBar = forwardRef<ChatInputBarHandle, Props>(function ChatInputBar
       );
     }
 
+    if (emojiPickerTab === 'wechat') {
+      return (
+        <>
+          {renderEmojiTabBar()}
+          <UserStickerPanel
+            disabled={chatMuted || sending}
+            onSendSticker={handleSendWechatSticker}
+          />
+        </>
+      );
+    }
+
     return (
       <>
-        <div className="mb-1.5 flex flex-shrink-0 items-center justify-between px-1">
-          <span className="text-[11px] text-netease-muted">QQNT 表情</span>
-          <div className="flex items-center gap-1.5">
-            {stickerSearchEnabled && (
-              <Tooltip content="搜索表情包">
-                <button
-                  type="button"
-                  onClick={() => setEmojiPickerTab('search')}
-                  className="rounded-lg p-1 text-netease-muted transition-colors hover:bg-white/10 hover:text-white"
-                  aria-label="搜索表情包"
-                >
-                  <Search className="h-3.5 w-3.5" />
-                </button>
-              </Tooltip>
-            )}
-            {loadingFaces && (
-              <span className="text-[11px] text-netease-muted/60">正在补全...</span>
-            )}
-          </div>
-        </div>
+        {renderEmojiTabBar()}
         <div ref={setEmojiGridRoot} className={gridClassName}>
           {qqFaces.map((face) => (
             <Tooltip key={face.id} content={face.text}>
@@ -498,7 +548,7 @@ const ChatInputBar = forwardRef<ChatInputBarHandle, Props>(function ChatInputBar
       />
       <div
         ref={emojiPickerPortalRef}
-        className={`absolute inset-x-0 bottom-0 flex flex-col rounded-t-2xl border-t border-netease-border/70 bg-netease-dark/98 p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] shadow-2xl backdrop-blur ${emojiPickerTab === 'search' ? '' : 'max-h-[min(68vh,480px)]'}`}
+        className={`absolute inset-x-0 bottom-0 flex flex-col rounded-t-2xl border-t border-netease-border/70 bg-netease-dark/98 p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] shadow-2xl backdrop-blur ${emojiPickerTab === 'search' ? '' : emojiPickerTab === 'wechat' ? 'h-[min(68vh,480px)]' : 'max-h-[min(68vh,480px)]'}`}
         style={emojiPickerTab === 'search' ? { height: STICKER_SEARCH_PICKER_HEIGHT } : undefined}
       >
         {renderEmojiPickerContent('grid min-h-0 flex-1 grid-cols-8 gap-0.5 overflow-y-auto overscroll-contain px-0.5 py-0.5')}
@@ -574,7 +624,7 @@ const ChatInputBar = forwardRef<ChatInputBarHandle, Props>(function ChatInputBar
           />
           {showEmoji && !isMobileLayout && (
             <div
-              className={`absolute bottom-full left-0 z-20 mb-2 box-border flex w-full max-w-full flex-col rounded-2xl border border-netease-border/70 bg-netease-dark/95 p-2 shadow-2xl backdrop-blur ${emojiPickerTab === 'search' ? '' : 'max-h-80'}`}
+              className={`absolute bottom-full left-0 z-20 mb-2 box-border flex w-full max-w-full flex-col rounded-2xl border border-netease-border/70 bg-netease-dark/95 p-2 shadow-2xl backdrop-blur ${emojiPickerTab === 'search' ? '' : emojiPickerTab === 'wechat' ? 'h-80' : 'max-h-80'}`}
               style={emojiPickerTab === 'search' ? { height: STICKER_SEARCH_PICKER_HEIGHT } : undefined}
             >
               {renderEmojiPickerContent('grid max-h-64 grid-cols-8 gap-0.5 overflow-y-auto overscroll-contain px-0.5 py-0.5')}

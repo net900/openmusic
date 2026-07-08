@@ -19,6 +19,7 @@ import {
   serializeMemberTiersMap,
 } from './memberTier.js';
 import { deleteRoomChatImages, validateChatImageForRoom, validateExternalChatImage } from './qiniuOss.js';
+import { isLocalStickerImageKey, validateLocalStickerImage } from './localSticker.js';
 import { collectDeviceIdsForUser, isAccessBanned } from './deviceIdentity.js';
 
 const generateRoomId = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 6);
@@ -307,12 +308,14 @@ export function buildPlaybackState(room) {
   repairPlaybackClock(room);
   const now = Date.now();
   const positionSec = getPlaybackTime(room);
+  const durationSec = room.current ? getSongDurationSeconds(room.current) : 0;
   return {
     roomId: room.id,
     version: room.playbackVersion || 0,
     trackId: room.current?.queueId || '',
     status: room.isPlaying ? 'playing' : 'paused',
     positionSec,
+    durationSec: durationSec > 0 ? durationSec : 0,
     serverNowMs: now,
     startedAt: room.isPlaying && room.startedAt ? room.startedAt : 0,
     currentTime: positionSec,
@@ -2160,7 +2163,9 @@ export function addChatMessage(roomId, userId, text, options = {}) {
 
   if (imageUrl) {
     const imageCheck = imageKey
-      ? validateChatImageForRoom(roomId, imageUrl, imageKey)
+      ? (isLocalStickerImageKey(imageKey)
+        ? validateLocalStickerImage(imageUrl, imageKey)
+        : validateChatImageForRoom(roomId, imageUrl, imageKey))
       : validateExternalChatImage(imageUrl);
     if (imageCheck.error) return imageCheck;
   }

@@ -194,6 +194,8 @@ export interface PlaybackState {
   trackId: string;
   status: 'playing' | 'paused';
   positionSec: number;
+  /** 当前曲目时长（秒），供客户端判断 position 是否已超出曲目 */
+  durationSec?: number;
   serverNowMs: number;
   startedAt: number;
   currentTime: number;

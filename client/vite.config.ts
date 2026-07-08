@@ -5,7 +5,7 @@ import { buildRobotsTxt, buildSitemapXml, resolveDevSiteOrigin } from '../server
 function seoDevMiddleware() {
   return {
     name: 'openmusic-seo-dev',
-    enforce: 'pre',
+    enforce: 'pre' as const,
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const pathname = req.url?.split('?')[0];
@@ -55,6 +55,8 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': 'http://localhost:4000',
+      '/wx-proxy': 'http://localhost:4000',
+      '/cgi-bin': 'http://localhost:4000',
       '/socket.io': {
         target: 'http://localhost:4000',
         ws: true,

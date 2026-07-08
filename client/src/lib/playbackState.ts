@@ -112,15 +112,18 @@ export function playbackStateFromRoom(
   isPlaying: boolean,
   currentTime: number,
   version = 0,
+  durationMs = 0,
 ): PlaybackState {
   const now = Date.now();
   const positionSec = Math.max(0, Number(currentTime) || 0);
+  const durationSec = Number(durationMs) > 0 ? Number(durationMs) / 1000 : 0;
   return {
     roomId,
     version,
     trackId,
     status: isPlaying ? 'playing' : 'paused',
     positionSec,
+    durationSec: durationSec > 0 ? durationSec : undefined,
     serverNowMs: now,
     startedAt: isPlaying ? now - positionSec * 1000 : 0,
     currentTime: positionSec,

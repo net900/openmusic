@@ -134,6 +134,8 @@ export function seedPlaybackFromRoom(room: RoomState): void {
     room.current.queueId,
     room.isPlaying,
     room.currentTime,
+    0,
+    room.current.duration ?? 0,
   );
   schedulePlaybackState(state);
 }

@@ -2,7 +2,7 @@ import type { QueueItem } from '../types';
 import { snapSmoothPlaybackTime } from '../hooks/useSmoothPlaybackTime';
 import { resolveTrackDurationSeconds } from '../hooks/useTrackDuration';
 import { useAudioStore } from '../stores/audioStore';
-import { getClientPlaybackState, getPlaybackTime } from './playbackState';
+import { getClientPlaybackState, getPlaybackTime, type ClientPlaybackState } from './playbackState';
 import { isAudioBuffering } from './audioBuffering';
 import { shouldSkipRoutineSync as shouldSkipByBufferingState } from './syncStateMachine';
 import { resetDriftController } from './driftController';
@@ -23,6 +23,9 @@ import { recordDriftSample } from './driftHistogram';
 const FINAL_WINDOW_SEC = 3;
 /** 播放中远端校正阈值；略低于常见 pending-snapshot 延迟，避免长期固定偏差 */
 const REMOTE_SEEK_THRESHOLD_SEC = 0.5;
+const BEYOND_DURATION_GRACE_SEC = 0.15;
+
+export type FollowerSyncResult = PlayResult | 'paused' | 'idle' | 'beyond_duration';
 
 let finalSyncTrackId: string | null = null;
 let finalSyncDone = false;
@@ -30,6 +33,38 @@ let finalSyncDone = false;
 function durationSources() {
   const { lrcDurationMs, lrcTrackKey, mediaDurationMs, mediaTrackKey } = useAudioStore.getState();
   return { lrcDurationMs, lrcTrackKey, mediaDurationMs, mediaTrackKey };
+}
+
+function resolveSyncDurationSec(
+  audio: HTMLAudioElement,
+  song: QueueItem,
+  state?: ClientPlaybackState | null,
+): number {
+  const fromState = Number(state?.durationSec ?? 0);
+  if (Number.isFinite(fromState) && fromState > 0) return fromState;
+  const fromTrack = resolveTrackDurationSeconds(song, durationSources());
+  if (fromTrack > 0) return fromTrack;
+  const fromAudio = audio.duration;
+  if (Number.isFinite(fromAudio) && fromAudio > 0) return fromAudio;
+  return 0;
+}
+
+export function isEndedWhileServerPlaying(
+  audio: HTMLAudioElement,
+  song: QueueItem,
+): boolean {
+  if (!audio.ended) return false;
+  const state = getClientPlaybackState();
+  if (!state || state.status !== 'playing') return false;
+  if (state.trackId && state.trackId !== song.queueId) return false;
+  return true;
+}
+
+function isPositionBeyondDuration(
+  positionSec: number,
+  durationSec: number,
+): boolean {
+  return durationSec > 0 && positionSec >= durationSec + BEYOND_DURATION_GRACE_SEC;
 }
 
 /** 用户 seek / 切歌：必须立即同步 */
@@ -94,16 +129,18 @@ function recordSyncDrift(
   mode: string,
 ): void {
   const target = resolveTargetTime(audio, options);
-  const audioTime = audio.currentTime;
-  const diffSec = target - audioTime;
-  recordDriftSample(diffSec);
+  const audioTime = audio.ended ? Number.NaN : audio.currentTime;
+  const diffSec = audio.ended ? Number.POSITIVE_INFINITY : target - audioTime;
+  if (Number.isFinite(diffSec)) {
+    recordDriftSample(diffSec);
+  }
   const state = getClientPlaybackState();
   debugLog('sync_drift', debugLine({
     mode,
     target: Number(target.toFixed(3)),
-    audio: Number(audioTime.toFixed(3)),
-    diffMs: Math.round(diffSec * 1000),
-    absDiffMs: Math.round(Math.abs(diffSec) * 1000),
+    audio: audio.ended ? 'ended' : Number(audioTime.toFixed(3)),
+    diffMs: Number.isFinite(diffSec) ? Math.round(diffSec * 1000) : 'inf',
+    absDiffMs: Number.isFinite(diffSec) ? Math.round(Math.abs(diffSec) * 1000) : 'inf',
     version: state?.version ?? null,
     trackId: state?.trackId ?? options.song.queueId,
   }));
@@ -174,6 +211,57 @@ function applyAutoPlaybackSync(
   }
 
   return 'played';
+}
+
+/** audio 已 ended 但服务端仍在 playing：重置 ended 状态并对齐进度 */
+async function recoverFromEndedAudio(
+  audio: HTMLAudioElement,
+  options: ApplySyncOptions,
+  reason: string,
+): Promise<FollowerSyncResult> {
+  const state = getClientPlaybackState();
+  if (!state || state.status !== 'playing') return 'idle';
+
+  const target = resolveTargetTime(audio, options);
+  const durationSec = resolveSyncDurationSec(audio, options.song, state);
+  const trackId = state.trackId || options.song.queueId;
+
+  if (isPositionBeyondDuration(target, durationSec)) {
+    debugLog('sync_ended_beyond_duration', debugLine({
+      reason,
+      target: Number(target.toFixed(3)),
+      durationSec: Number(durationSec.toFixed(3)),
+      trackId,
+      version: state.version,
+    }));
+    return 'beyond_duration';
+  }
+
+  const seekTarget = options.capTime(target, audio.duration);
+  debugLog('sync_ended_recover', debugLine({
+    reason,
+    target: Number(target.toFixed(3)),
+    seekTarget: Number(seekTarget.toFixed(3)),
+    durationSec: durationSec > 0 ? Number(durationSec.toFixed(3)) : null,
+    trackId,
+    version: state.version,
+  }));
+
+  ensureFinalSyncTrack(trackId);
+  finalSyncDone = false;
+  lockPlaybackRate(audio);
+  audio.pause();
+  audio.currentTime = seekTarget;
+  snapSmoothPlaybackTime(seekTarget);
+
+  const initial = await tryPlayWithAutoplayFallback(audio, Boolean(options.tvMode));
+  const result = await assessPlaybackResult(audio, initial);
+  debugLog('sync_play', debugLine({
+    reason: `ended_recover_${reason}`,
+    result,
+    audio: Number(audio.currentTime.toFixed(3)),
+  }));
+  return result;
 }
 
 /** 播放状态变更：暂停必对齐；播放中仅远端 seek（偏差大）或开声，中途不追 */
@@ -256,11 +344,15 @@ async function applyMandatorySync(
 export async function applyFollowerSync(
   audio: HTMLAudioElement,
   options: ApplySyncOptions,
-): Promise<PlayResult | 'paused' | 'idle'> {
+): Promise<FollowerSyncResult> {
   if (!audio.src) return 'idle';
 
   const mode = syncModeLabel(options);
   recordSyncDrift(audio, options, mode);
+
+  if (isEndedWhileServerPlaying(audio, options.song)) {
+    return recoverFromEndedAudio(audio, options, mode);
+  }
 
   if (isMandatorySync(options)) {
     return applyMandatorySync(audio, options);
@@ -300,7 +392,10 @@ export async function applyFollowerSync(
 export async function applyVisibilityResume(
   audio: HTMLAudioElement,
   options: ApplySyncOptions,
-): Promise<PlayResult | 'paused' | 'idle'> {
+): Promise<FollowerSyncResult> {
+  if (isEndedWhileServerPlaying(audio, options.song)) {
+    return recoverFromEndedAudio(audio, options, 'visibility');
+  }
   return applyFollowerSync(audio, options);
 }
 
@@ -312,8 +407,17 @@ export async function applyPostBufferSync(
   audio: HTMLAudioElement,
   options: ApplySyncOptions,
 ): Promise<void> {
-  if (!audio.src || audio.paused || audio.ended) return;
+  if (!audio.src) return;
   if (getClientPlaybackState()?.status !== 'playing') return;
+
+  if (audio.ended) {
+    const result = await recoverFromEndedAudio(audio, options, 'post_buffer');
+    if (result === 'beyond_duration' || result === 'blocked' || result === 'error') return;
+    if (result !== 'played') return;
+    return;
+  }
+
+  if (audio.paused) return;
   if (isMandatorySync(options)) {
     await applyMandatorySync(audio, options);
     return;

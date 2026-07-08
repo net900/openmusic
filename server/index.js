@@ -1,6 +1,7 @@
 import './loadEnv.js';
 import { resizeCoverForThumb } from './coverUrl.js';
-import { serveUpstreamMedia } from './mediaProxy.js';
+import { fetchMeting, formatMetingFetchError } from './metingFetch.js';
+import { mountWechatFileHelperProxy } from './wechatFileHelperProxy.js';
 import { buildRobotsTxt, buildSitemapXml, resolveSiteOrigin } from './seoFiles.js';
 import express from 'express';
 import cors from 'cors';
@@ -144,7 +145,12 @@ const io = new Server(httpServer, {
 });
 
 app.use(cors({ origin: corsOrigin }));
-app.use(express.json());
+app.use(express.json({
+  limit: '2mb',
+  verify: (req, _res, buf) => {
+    req.rawBody = buf;
+  },
+}));
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   const controller = new AbortController();
@@ -361,7 +367,7 @@ async function resolveMediaProxyFetchUrl(fetchUrl, thumbPx = 0) {
   if (!pic) return fetchUrl;
 
   try {
-    const response = await fetchWithTimeout(
+    const response = await fetchMeting(
       buildMetingUrl({ server: pic.server, type: 'pic', id: pic.id }),
       { redirect: 'manual' },
       15000,
@@ -387,7 +393,7 @@ async function resolveMediaProxyFetchUrl(fetchUrl, thumbPx = 0) {
 }
 
 async function proxyMetingResponse(targetUrl, res, thumbPx = 0, metingType = '') {
-  const response = await fetchWithTimeout(targetUrl, { redirect: 'manual' });
+  const response = await fetchMeting(targetUrl, { redirect: 'manual' });
 
   if (response.status >= 300 && response.status < 400) {
     let location = response.headers.get('location');
@@ -483,7 +489,7 @@ app.get('/api/music/netease/playlists/search', async (req, res) => {
 
   try {
     const targetUrl = buildMetingUrl({ server: 'netease', type: 'search_playlist', id: keyword });
-    const response = await fetchWithTimeout(targetUrl, {}, 10000);
+    const response = await fetchMeting(targetUrl, {}, 10000);
     if (!response.ok) return res.status(response.status).json({ error: '网易云歌单搜索失败' });
     const data = await response.json();
     const playlists = Array.isArray(data) ? data : [];
@@ -550,7 +556,7 @@ app.get('/api/meting', async (req, res) => {
     delete query.size;
     await proxyMetingResponse(buildMetingUrl(query), res, thumbPx, String(query.type || ''));
   } catch (err) {
-    console.error('Meting proxy error:', err.message);
+    console.error('Meting proxy error:', formatMetingFetchError(err));
     res.status(502).json({ error: '无法连接 Meting API，请检查 METING_API_URL 配置' });
   }
 });
@@ -937,6 +943,8 @@ function sendAndroidApk(req, res) {
 
 app.get('/downloads/openmusic.apk', sendAndroidApk);
 
+mountWechatFileHelperProxy(app, fetchWithTimeout);
+
 app.get('/robots.txt', (req, res) => {
   const origin = resolveSiteOrigin(req, ALLOWED_ORIGINS);
   res.type('text/plain').send(buildRobotsTxt(origin));
@@ -949,7 +957,13 @@ app.get('/sitemap.xml', (req, res) => {
 
 app.use(express.static(clientDist));
 app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/api') || req.path.startsWith('/socket.io') || req.path.startsWith('/downloads/')) {
+  if (
+    req.path.startsWith('/api')
+    || req.path.startsWith('/socket.io')
+    || req.path.startsWith('/downloads/')
+    || req.path.startsWith('/wx-proxy')
+    || req.path.startsWith('/cgi-bin')
+  ) {
     return next();
   }
   res.sendFile(path.join(clientDist, 'index.html'), (err) => {

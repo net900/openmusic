@@ -48,7 +48,7 @@ import {
   recordSongPlaybackSuccess,
 } from '../lib/playbackQualityLock';
 import { waitForAudioMinimumReady } from '../lib/audioReady';
-import { applyFollowerSync, applyVisibilityResume, applyPostBufferSync } from '../lib/playbackSync';
+import { applyFollowerSync, applyVisibilityResume, applyPostBufferSync, isEndedWhileServerPlaying } from '../lib/playbackSync';
 import { getClientPlaybackState, optimisticSeekPosition } from '../lib/playbackState';
 import { attachAudioBufferingListeners, isAudioBuffering, setAudioBufferEndHandler } from '../lib/audioBuffering';
 import { flushPendingPlaybackSnapshot } from '../lib/playbackSchedule';
@@ -180,6 +180,16 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
   const lastSkipAt = useRef(0);
   const wasLeaderRef = useRef(isPlaybackLeader);
 
+  const shouldSkipForEndedTrackKey = useCallback((song: QueueItem, audio: HTMLAudioElement): boolean => {
+    if (isEndedWhileServerPlaying(audio, song)) return false;
+    return endedTrackKey.current === trackKeyOf(song);
+  }, []);
+
+  const handleBeyondDuration = useCallback((song: QueueItem) => {
+    if (!useRoomStore.getState().isPlaybackLeader) return;
+    finishSong(song.queueId);
+  }, [finishSong]);
+
   const playAudio = useCallback(async (audio: HTMLAudioElement) => {
     const result = await tryPlayWithAutoplayFallback(audio, tvMode);
     return assessPlaybackResult(audio, result);
@@ -225,6 +235,24 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
     setNeedsAudioUnlock(false);
   }, [controller, setNeedsAudioUnlock]);
 
+  const handleSyncResult = useCallback((
+    result: Awaited<ReturnType<typeof applyFollowerSync>>,
+    audio: HTMLAudioElement,
+    liveRoom: NonNullable<typeof room>,
+    song: QueueItem,
+  ) => {
+    if (result === 'beyond_duration') {
+      handleBeyondDuration(song);
+      return;
+    }
+    if (result === 'blocked' || result === 'error') {
+      applyPlaybackResult(result, audio, liveRoom);
+    } else if (result === 'played') {
+      endedTrackKey.current = null;
+      setNeedsAudioUnlock(false);
+    }
+  }, [applyPlaybackResult, handleBeyondDuration, setNeedsAudioUnlock]);
+
   const enqueuePause = useCallback(() => {
     controller.enqueue(() => {
       controller.audio.pause();
@@ -240,7 +268,7 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
       const song = liveRoom.current;
       const audio = controller.audio;
       if (!isAudioBoundToQueue(audio, song.queueId)) return;
-      if (endedTrackKey.current === trackKeyOf(song)) return;
+      if (shouldSkipForEndedTrackKey(song, audio)) return;
       if (!playbackStateMatchesCurrentTrack(song)) return;
       if (!audio.src) return;
       const result = await applyFollowerSync(audio, {
@@ -252,13 +280,9 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
         forceCorrection: options.forceCorrection,
       });
 
-      if (result === 'blocked' || result === 'error') {
-        applyPlaybackResult(result, audio, liveRoom);
-      } else if (result === 'played') {
-        setNeedsAudioUnlock(false);
-      }
+      handleSyncResult(result, audio, liveRoom, song);
     });
-  }, [controller, tvMode, applyPlaybackResult, setNeedsAudioUnlock]);
+  }, [controller, tvMode, shouldSkipForEndedTrackKey, handleSyncResult]);
 
   const applyVisibilitySync = useCallback(() => {
     controller.enqueue(async () => {
@@ -267,7 +291,7 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
       const song = liveRoom.current;
       const audio = controller.audio;
       if (!isAudioBoundToQueue(audio, song.queueId)) return;
-      if (endedTrackKey.current === trackKeyOf(song)) return;
+      if (shouldSkipForEndedTrackKey(song, audio)) return;
       if (!playbackStateMatchesCurrentTrack(song)) return;
       if (!audio.src) return;
       const result = await applyVisibilityResume(audio, {
@@ -276,13 +300,9 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
         tvMode,
       });
 
-      if (result === 'blocked' || result === 'error') {
-        applyPlaybackResult(result, audio, liveRoom);
-      } else if (result === 'played') {
-        setNeedsAudioUnlock(false);
-      }
+      handleSyncResult(result, audio, liveRoom, song);
     });
-  }, [controller, tvMode, applyPlaybackResult, setNeedsAudioUnlock]);
+  }, [controller, tvMode, shouldSkipForEndedTrackKey, handleSyncResult]);
 
   const requestSkip = useCallback((options: { bypassThrottle?: boolean } = {}) => {
     if (skippingRef.current) return;
@@ -341,7 +361,17 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
         const current = live.room?.current;
         if (!current) return;
         if (!isAudioBoundToQueue(audio, current.queueId)) return;
-        runtime.endedTrackKey.current = trackKeyOf(current);
+
+        const pbState = getClientPlaybackState();
+        const serverStillPlaying = pbState?.status === 'playing'
+          && (!pbState.trackId || pbState.trackId === current.queueId);
+
+        if (serverStillPlaying) {
+          runtime.endedTrackKey.current = null;
+        } else {
+          runtime.endedTrackKey.current = trackKeyOf(current);
+        }
+
         audio.pause();
         if (useRoomStore.getState().isPlaybackLeader) {
           runtime.finishSong(current.queueId);
@@ -752,10 +782,10 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
 
     const forceZero = justSkippedRef.current;
     justSkippedRef.current = false;
-    if (!forceZero && endedTrackKey.current === trackKeyOf(liveRoom.current)) return;
+    if (!forceZero && shouldSkipForEndedTrackKey(liveRoom.current, controller.audio)) return;
 
     applySync(forceZero ? { forceZero: true } : { forceCorrection: true });
-  }, [playbackVersion, trackLoading, applySync]);
+  }, [playbackVersion, trackLoading, applySync, shouldSkipForEndedTrackKey, controller]);
 
   // 离散同步：NORMAL 不追赶，FINAL（≤3s）一次性对齐；6s 仅检查是否进入 FINAL
   useEffect(() => {
@@ -770,13 +800,13 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
       if (isAudioBuffering(controller.audio)) return;
       if (!canSyncAudioForQueue(controller.audio, liveRoom.current.queueId)) return;
       if (!playbackStateMatchesCurrentTrack(liveRoom.current)) return;
-      if (endedTrackKey.current === trackKeyOf(liveRoom.current)) return;
+      if (shouldSkipForEndedTrackKey(liveRoom.current, controller.audio)) return;
       if (!controller.audio.src) return;
       applySync();
     }, CALIBRATION_INTERVAL_MS);
 
     return () => window.clearInterval(id);
-  }, [tvMode, controller, applySync, room?.isPlaying, room?.current?.queueId]);
+  }, [tvMode, controller, applySync, shouldSkipForEndedTrackKey, room?.isPlaying, room?.current?.queueId]);
 
   useEffect(() => {
     setAudioBufferEndHandler((audio) => {
@@ -820,7 +850,7 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
       if (!liveRoom?.current) return;
       if (!canSyncAudioForQueue(controller.audio, liveRoom.current.queueId)) return;
       if (!playbackStateMatchesCurrentTrack(liveRoom.current)) return;
-      if (endedTrackKey.current === trackKeyOf(liveRoom.current)) return;
+      if (shouldSkipForEndedTrackKey(liveRoom.current, controller.audio)) return;
       if (useAudioStore.getState().trackLoading || skippingRef.current) return;
       if (!controller.audio.src) return;
 
@@ -829,7 +859,7 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
 
     document.addEventListener('visibilitychange', onVisibilityChange);
     return () => document.removeEventListener('visibilitychange', onVisibilityChange);
-  }, [controller, applyVisibilitySync]);
+  }, [controller, applyVisibilitySync, shouldSkipForEndedTrackKey]);
 
   const handlePlayPause = useCallback(() => {
     if (!room) return;
@@ -916,7 +946,7 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
       if (!controller.audio.src || !controller.audio.paused) return;
       if (!canSyncAudioForQueue(controller.audio, liveRoom.current.queueId)) return;
       if (!playbackStateMatchesCurrentTrack(liveRoom.current)) return;
-      if (endedTrackKey.current === trackKeyOf(liveRoom.current)) return;
+      if (shouldSkipForEndedTrackKey(liveRoom.current, controller.audio)) return;
 
       tryFlushPendingSnapshot();
       // 等待解锁期间也要把暂停的 audio 对齐到服务端，点击后不会从旧进度开播
@@ -925,7 +955,7 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
 
     const id = window.setInterval(check, UNLOCK_POLL_MS);
     return () => window.clearInterval(id);
-  }, [controller, room?.current?.queueId, room?.isPlaying, applySync]);
+  }, [controller, room?.current?.queueId, room?.isPlaying, applySync, shouldSkipForEndedTrackKey]);
 
   useEffect(() => {
     const roomState = useRoomStore.getState().room;

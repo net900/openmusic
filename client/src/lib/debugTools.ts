@@ -133,13 +133,16 @@ function formatSnapshotText(reason: string): string {
   const pb = getClientPlaybackState();
   if (pb) {
     const derived = getPlaybackTime(pb);
-    const driftMs = Math.round((derived - audio.currentTime) * 1000);
+    const driftMs = audio.ended
+      ? 'inf'
+      : Math.round((derived - audio.currentTime) * 1000);
     const timing = getPlaybackSnapshotTiming();
     lines.push(debugLine({
       pbVersion: pb.version,
       pbTrackId: pb.trackId,
       pbStatus: pb.status,
       pbPositionSec: fmtNum(pb.positionSec),
+      pbDurationSec: fmtNum(pb.durationSec),
       pbDerivedSec: fmtNum(derived),
       pbDriftMs: driftMs,
       pbStartedAt: pb.startedAt || 0,

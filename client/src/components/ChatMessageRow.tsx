@@ -10,6 +10,7 @@ import {
   CHAT_PHOTO_CLASS,
   CHAT_STICKER_CLASS,
   formatChatTime,
+  isChatStickerMessage,
   tokenizeMentionSegments,
 } from '../lib/chatPanelUtils';
 import { parseQQFaceTokens, QFaceLoadPriority } from '../lib/qface';
@@ -67,8 +68,8 @@ function renderReplyRefContent(
   alignEnd = false,
 ) {
   const hasText = reply.text.trim().length > 0;
-  const isSticker = Boolean(reply.imageUrl && !reply.imageKey);
-  const isPhoto = Boolean(reply.imageUrl && reply.imageKey);
+  const isSticker = isChatStickerMessage(reply.imageUrl, reply.imageKey);
+  const isPhoto = Boolean(reply.imageUrl && !isSticker);
 
   return (
     <span className={`inline-flex min-w-0 max-w-full flex-wrap items-center gap-1 ${alignEnd ? 'justify-end' : ''}`}>
@@ -141,7 +142,7 @@ function ChatMessageRow({
   const isRoomAdmin = room.adminIds.includes(msg.userId);
   const userMemberTier = room.memberTiers?.[msg.userId];
   const user = userMap.get(msg.userId);
-  const isStickerImage = Boolean(msg.imageUrl && !msg.imageKey);
+  const isStickerImage = isChatStickerMessage(msg.imageUrl, msg.imageKey);
   const isPureStickerHidden = pureMode && isStickerImage && !pureImageRevealed;
   const isPhotoOnly = Boolean(
     msg.imageUrl && !msg.text && !isStickerImage && (!pureMode || pureImageRevealed),

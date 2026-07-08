@@ -1,3 +1,5 @@
+import { fetchMeting } from './metingFetch.js';
+
 const METING_API_URL = (process.env.METING_API_URL ).replace(/\/$/, '');
 const METING_API_AUTH = process.env.METING_API_AUTH || '';
 
@@ -15,6 +17,9 @@ function buildMetingUrl(query) {
 }
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+  if (String(url || '').startsWith(METING_API_URL)) {
+    return fetchMeting(url, options, timeoutMs);
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
