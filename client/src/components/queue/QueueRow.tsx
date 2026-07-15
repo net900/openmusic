@@ -4,7 +4,6 @@ import { getClientId } from '../../lib/clientId';
 import { useTrackSourceError } from '../../hooks/useSongSourceError';
 import type { RoomMemberTier, QueueItem } from '../../types';
 import SongCover from '../SongCover';
-import SourceBadge from '../SourceBadge';
 import FavoriteButton from '../FavoriteButton';
 import Tooltip from '../Tooltip';
 import TruncateTip from '../TruncateTip';
@@ -103,10 +102,6 @@ function QueueRow({
             />
           )}
           {memberTier && <MemberTierBadge tier={memberTier} />}
-          <SourceBadge
-            source={song.source || 'netease'}
-            className="rounded-full px-1.5 py-0 text-[9px] leading-4"
-          />
           <FavoriteButton
             song={song}
             className="w-7 h-7 text-netease-muted hover:text-rose-300"

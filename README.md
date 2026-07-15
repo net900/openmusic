@@ -237,6 +237,12 @@ server/downloads/openmusic.apk
 
 ---
 
+## 🔗 友情链接
+
+* [Linux.do](https://linux.do/) — 新的理想型社区
+
+---
+
 ## 📄 免责声明
 
 本项目仅供学习与技术交流使用。
