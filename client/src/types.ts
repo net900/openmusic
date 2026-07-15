@@ -88,6 +88,7 @@ export interface ChatReplyRef {
   text: string;
   imageUrl?: string | null;
   imageKey?: string | null;
+  asSticker?: boolean;
 }
 
 export interface ChatReactionUser {
@@ -107,6 +108,7 @@ export interface ChatMessage {
   text: string;
   imageUrl?: string | null;
   imageKey?: string | null;
+  asSticker?: boolean;
   kind?: 'chat' | 'welcome' | 'system';
   mentions?: ChatMention[];
   replyTo?: ChatReplyRef | null;

@@ -24,12 +24,11 @@ type PendingAction =
   | { type: 'admin'; user: DisplayUser; admin: boolean };
 
 export default function OnlineUsers({ users, creatorId, memberTiers = {}, onNotice }: Props) {
-  const room = useRoomStore((s) => s.room);
   const mySocketId = useRoomStore((s) => s.mySocketId);
   const isOwner = useRoomStore((s) => s.isOwner);
   const canControlPlayback = useRoomStore((s) => s.canControlPlayback);
-  const adminIds = room?.adminIds || [];
-  const userNicknames = room?.userNicknames || {};
+  const adminIds = useRoomStore((s) => s.room?.adminIds) || [];
+  const userNicknames = useRoomStore((s) => s.room?.userNicknames) || {};
   const nickname = useRoomStore((s) => s.nickname);
   const setNickname = useRoomStore((s) => s.setNickname);
   const { renameUser, kickUser, setRoomAdmin } = useSocket();

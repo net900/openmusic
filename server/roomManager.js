@@ -149,7 +149,7 @@ function snapshotRoomForStorage(room) {
     currentTime: getPlaybackTime(room),
     playbackVersion: room.playbackVersion ?? 0,
     playbackUpdatedAt: room.playbackUpdatedAt ?? Date.now(),
-    messages: room.messages.slice(-MAX_CHAT_MESSAGES),
+    messages: room.messages.slice(-MAX_CHAT_MESSAGES).map(sanitizeMessageForStorage),
     knownUserIds: Array.from(room.knownUserIds || []),
     songHistory: (room.songHistory || [])
       .slice(0, MAX_SONG_HISTORY)
@@ -1325,7 +1325,7 @@ export function removeUser(roomId, userId, connectionId = null) {
 
   const user = room.users.get(userId);
   if (connectionId && user?.connectionIds?.size && !user.connectionIds.has(connectionId)) {
-    return serializeRoom(room);
+    return { unchanged: true };
   }
 
   if (connectionId && user?.connectionIds) {
@@ -1337,9 +1337,12 @@ export function removeUser(roomId, userId, connectionId = null) {
       refreshOwnerConnection(room);
       persistRoom(room);
       invalidateRoomsListCache();
-      return serializeRoom(room);
+      // 用户仍在房内，仅少了一条连接：不触发全房 users 风暴
+      return { unchanged: true };
     }
   }
+
+  if (!user) return { unchanged: true };
 
   room.users.delete(userId);
   // 管理员身份在主动离房时保留，重进后恢复；仅踢人时清除（见 kickUser）
@@ -1358,7 +1361,7 @@ export function removeUser(roomId, userId, connectionId = null) {
     persistRoom(room);
     scheduleRoomDestroy(roomId);
     invalidateRoomsListCache();
-    return { empty: true };
+    return { empty: true, userRemoved: true };
   }
 
   refreshRoomOwner(room);
@@ -1371,7 +1374,7 @@ export function removeUser(roomId, userId, connectionId = null) {
 
   persistRoom(room);
   invalidateRoomsListCache();
-  return serializeRoom(room);
+  return { userRemoved: true, room: serializeRoom(room) };
 }
 
 
@@ -1384,7 +1387,7 @@ export function updateUserLocation(roomId, userId, location) {
   if (user.location === nextLocation) return null;
 
   user.location = nextLocation;
-  persistRoom(room);
+  // 定位不必立刻落盘，随下一次结构变更 persist 即可
   return true;
 }
 
@@ -1530,7 +1533,11 @@ export function toggleQueueLike(roomId, userId, queueId) {
   item.likedByIds = nextLiked ? [...likedByIds, userId] : likedByIds.filter((id) => id !== userId);
   sortQueueByPriority(room);
   persistRoom(room);
-  return { room: serializeRoom(room), liked: nextLiked };
+  return {
+    liked: nextLiked,
+    queue: room.queue.map(serializeQueueItemForRoom).filter(Boolean),
+    current: serializeQueueItemForRoom(room.current),
+  };
 }
 
 export function removeFromQueue(roomId, socketId, queueId) {
@@ -2072,22 +2079,63 @@ function serializeReactions(reactions) {
     .filter((group) => group.users.length > 0);
 }
 
-function serializeChatMessage(message) {
+function serializeChatMessage(message, options = {}) {
+  const allowLargeDataUrl = Boolean(options.allowLargeDataUrl);
+  const imageUrl = String(message.imageUrl || '').trim() || null;
+  const replyTo = sanitizeReplyImageForWire(message.replyTo, allowLargeDataUrl);
+
+  let safeImageUrl = imageUrl;
+  if (!allowLargeDataUrl && isOversizedDataUrl(imageUrl)) {
+    safeImageUrl = null;
+  }
+
   return {
     id: message.id,
     userId: message.userId,
     nickname: message.nickname,
     text: message.text,
-    imageUrl: message.imageUrl || null,
+    imageUrl: safeImageUrl,
     imageKey: message.imageKey || null,
+    asSticker: Boolean(message.asSticker),
     kind: message.kind || 'chat',
     mentions: message.mentions || [],
-    replyTo: message.replyTo || null,
+    replyTo,
     timestamp: message.timestamp,
     reactions: serializeReactions(message.reactions),
     memberTier: message.memberTier || null,
     targetUserId: message.targetUserId || null,
     targetNickname: message.targetNickname || null,
+  };
+}
+
+function isOversizedDataUrl(imageUrl) {
+  const url = String(imageUrl || '');
+  return url.startsWith('data:') && url.length > 8 * 1024;
+}
+
+function sanitizeReplyImageForWire(replyTo, allowLargeDataUrl) {
+  if (!replyTo) return null;
+  if (allowLargeDataUrl || !isOversizedDataUrl(replyTo.imageUrl)) return replyTo;
+  return {
+    ...replyTo,
+    imageUrl: null,
+  };
+}
+
+function sanitizeMessageForStorage(message) {
+  if (!message) return message;
+  const imageUrl = message.imageUrl;
+  const replyTo = message.replyTo;
+  const needsStrip = isOversizedDataUrl(imageUrl)
+    || (replyTo && isOversizedDataUrl(replyTo.imageUrl));
+  if (!needsStrip) return message;
+
+  return {
+    ...message,
+    imageUrl: isOversizedDataUrl(imageUrl) ? undefined : imageUrl,
+    replyTo: replyTo && isOversizedDataUrl(replyTo.imageUrl)
+      ? { ...replyTo, imageUrl: undefined }
+      : replyTo,
   };
 }
 
@@ -2137,10 +2185,15 @@ function sanitizeChatReplyRef(replyTo) {
 
   const imageUrl = String(replyTo.imageUrl || '').trim();
   const imageKey = String(replyTo.imageKey || '').trim();
+  const asSticker = Boolean(replyTo.asSticker);
   const result = { id, userId, nickname, text };
-  if (imageUrl) {
+  if (asSticker) result.asSticker = true;
+  if (imageUrl && !imageUrl.startsWith('data:')) {
     result.imageUrl = imageUrl;
     if (imageKey) result.imageKey = imageKey;
+  } else if (imageKey) {
+    // 回复引用不内联 data URL，避免历史/广播膨胀
+    result.imageKey = imageKey;
   }
   return result;
 }
@@ -2152,6 +2205,7 @@ export function addChatMessage(roomId, userId, text, options = {}) {
   const content = String(text || '').trim();
   const imageUrl = String(options.imageUrl || '').trim();
   const imageKey = String(options.imageKey || '').trim();
+  const asSticker = Boolean(options.asSticker) || isLocalStickerImageKey(imageKey);
 
   if (!content && !imageUrl) return { error: '消息不能为空' };
   if (content.length > 500) return { error: '消息过长' };
@@ -2186,6 +2240,7 @@ export function addChatMessage(roomId, userId, text, options = {}) {
     text: content,
     imageUrl: imageUrl || undefined,
     imageKey: imageKey || undefined,
+    asSticker: asSticker || undefined,
     mentions,
     replyTo: sanitizeChatReplyRef(options.replyTo),
     timestamp: Date.now(),
@@ -2196,8 +2251,18 @@ export function addChatMessage(roomId, userId, text, options = {}) {
     room.messages.splice(0, room.messages.length - MAX_CHAT_MESSAGES);
   }
 
+  // 内存里也不长期保留超大 data URL，实时广播后即可压缩历史体积
+  if (isOversizedDataUrl(message.imageUrl)) {
+    setImmediate(() => {
+      if (message.imageUrl && isOversizedDataUrl(message.imageUrl)) {
+        message.imageUrl = undefined;
+        persistRoom(room);
+      }
+    });
+  }
+
   persistRoom(room);
-  return { message: serializeChatMessage(message) };
+  return { message: serializeChatMessage(message, { allowLargeDataUrl: true }) };
 }
 
 export function getPlaybackTime(room) {
@@ -2274,14 +2339,18 @@ function repairPlaybackClock(room) {
   }
 }
 
-function serializeUser(user) {
-  return {
+function serializeUser(user, options = {}) {
+  const payload = {
     id: user.id,
     nickname: user.nickname,
     readOnly: user.readOnly,
     joinedAt: user.joinedAt,
-    location: user.location || '',
   };
+  // 广播包省略 location，缩小人多时的 users 体积；进房 ACK 仍带完整字段
+  if (options.includeLocation !== false) {
+    payload.location = user.location || '';
+  }
+  return payload;
 }
 
 /** 队列/当前歌曲广播字段：不含 url/lrc，歌词与播放地址由客户端按需拉取 */
@@ -2384,11 +2453,11 @@ export function getChatHistoryForUser(roomId, userId, options = {}) {
     }
 
     const older = all.slice(0, endIndex);
-    const messages = older.slice(-limit).map(serializeChatMessage);
+    const messages = older.slice(-limit).map((message) => serializeChatMessage(message));
     return { messages, hasMore: older.length > limit };
   }
 
-  const messages = all.slice(-limit).map(serializeChatMessage);
+  const messages = all.slice(-limit).map((message) => serializeChatMessage(message));
   return { messages, hasMore: all.length > limit };
 }
 
@@ -2467,6 +2536,67 @@ function serializeRoom(room, options = {}) {
     bannedSongs: viewerCanModerate ? serializeBannedSongs(room.bannedSongs) : undefined,
     memberTiers: serializeMemberTiersMap(room.memberTiers),
     memberSettings: serializeMemberSettings(room.memberSettings),
+  };
+}
+
+/**
+ * 预先序列化广播共用载荷，避免人数多时对每个连接重复 map queue/users。
+ */
+export function prepareRoomBroadcast(roomId) {
+  const room = rooms.get(roomId?.toUpperCase());
+  if (!room) return null;
+  repairPlaybackClock(room);
+
+  const shared = {
+    id: room.id,
+    name: room.name,
+    hasPassword: Boolean(room.passwordHash),
+    isLocked: Boolean(room.isLocked),
+    muteAll: Boolean(room.muteAll),
+    ownerId: room.ownerId,
+    creatorId: room.creatorId ?? null,
+    adminIds: getOrderedAdminIds(room),
+    queue: room.queue.map(serializeQueueItemForRoom).filter(Boolean),
+    current: serializeQueueItemForRoom(room.current),
+    isPlaying: room.isPlaying,
+    currentTime: getPlaybackTime(room),
+    users: Array.from(room.users.values()).map((user) => serializeUser(user, { includeLocation: false })),
+    userCount: room.users.size,
+    jumpRequests: room.jumpRequests,
+    skipRequests: room.skipRequests,
+    nextRandom: serializeQueueItemForRoom(room.nextRandom),
+    randomLoading: Boolean(room.randomLoading),
+    audioQuality: normalizeRoomAudioQuality(room.audioQuality),
+    neteaseFmMode: normalizeFmMode(room.neteaseFmMode),
+    announcementEnabled: Boolean(room.announcementEnabled),
+    announcementText: String(room.announcementText || '').slice(0, MAX_ANNOUNCEMENT_LENGTH),
+    songRequestEnabled: room.songRequestEnabled !== false,
+    songRequestMinStaySec: normalizeSongRequestMinStaySec(room.songRequestMinStaySec),
+    songRequestMaxPerUser: normalizeSongRequestMaxPerUser(room.songRequestMaxPerUser),
+    songRequestCooldownSec: normalizeSongRequestCooldownSec(room.songRequestCooldownSec),
+    queueMaxLength: normalizeQueueMaxLength(room.queueMaxLength),
+    memberTiers: serializeMemberTiersMap(room.memberTiers),
+    memberSettings: serializeMemberSettings(room.memberSettings),
+  };
+
+  const moderatorExtras = {
+    mutedUserIds: Array.from(room.mutedUserIds || []),
+    userNicknames: Object.fromEntries(room.userNicknames || []),
+    bannedSongs: serializeBannedSongs(room.bannedSongs),
+  };
+
+  return { room, shared, moderatorExtras };
+}
+
+export function roomUpdateForViewer(prepared, viewerUserId = null) {
+  if (!prepared) return null;
+  const { room, shared, moderatorExtras } = prepared;
+  const viewerCanModerate = viewerUserId ? canControlPlayback(room, viewerUserId) : false;
+  return {
+    ...shared,
+    ...(viewerCanModerate ? moderatorExtras : {}),
+    chatMuted: viewerUserId ? isUserChatMuted(room, viewerUserId) : false,
+    // chatVisibleSince 仅进房 ACK 下发，后续广播省略以缩小载荷并便于整房共享
   };
 }
 

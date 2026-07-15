@@ -1,4 +1,5 @@
 import { memo, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { Play, Pause, SkipForward, ChevronUp, Loader2 } from 'lucide-react';
 import { useRoomStore } from '../stores/roomStore';
 import { useAudioStore } from '../stores/audioStore';
@@ -14,6 +15,7 @@ import MiniPlayerLyricTicker from './playback/MiniPlayerLyricTicker';
 import VolumeControl from './VolumeControl';
 import FavoriteButton from './FavoriteButton';
 import Tooltip from './Tooltip';
+import { updateMediaSessionPlaybackState } from '../lib/mediaSession';
 
 interface Props {
   onExpand: () => void;
@@ -31,7 +33,16 @@ export default memo(function MiniPlayer({
   variant = 'default',
 }: Props) {
 
-  const room = useRoomStore((s) => s.room);
+  const { current, isPlaying, fmLoading, skipRequests, hasRoom } = useRoomStore(useShallow((s) => {
+    const r = s.room;
+    return {
+      current: r?.current ?? null,
+      isPlaying: r?.isPlaying ?? false,
+      fmLoading: Boolean(r?.randomLoading && !r?.current),
+      skipRequests: r?.skipRequests,
+      hasRoom: Boolean(r),
+    };
+  }));
 
   const canControlPlayback = useRoomStore((s) => s.canControlPlayback);
   const trackLoading = useAudioStore((s) => s.trackLoading);
@@ -43,19 +54,15 @@ export default memo(function MiniPlayer({
   const [skipError, setSkipError] = useState('');
   const [skipMsg, setSkipMsg] = useState('');
   const mySocketId = useRoomStore((s) => s.mySocketId);
-  const hasPendingSkip = room?.skipRequests?.some((r) => r.requestedBy === mySocketId) ?? false;
-
-  const current = room?.current ?? null;
-  const fmLoading = Boolean(room?.randomLoading && !current);
-
-  const isPlaying = room?.isPlaying ?? false;
+  const hasPendingSkip = skipRequests?.some((r) => r.requestedBy === mySocketId) ?? false;
 
   const handlePlayPause = () => {
-    if (!room) return;
-    const next = !room.isPlaying;
+    if (!hasRoom) return;
+    const next = !isPlaying;
     if (!next) {
       localPlayback?.(false);
     }
+    updateMediaSessionPlaybackState(next ? 'playing' : 'paused');
     togglePlay(next);
     if (next) localPlayback?.(true);
   };

@@ -18,7 +18,24 @@ export function mergeRoomState(incoming: RoomState, current: RoomState | null): 
 
   const merged: RoomState = { ...incoming, currentTime: incoming.currentTime };
 
-  if (roomUsersEqual(incoming.users, current.users)) merged.users = current.users;
+  // 后续 room_update 可能省略 chatVisibleSince，保留进房时的值
+  if (incoming.chatVisibleSince == null && current.chatVisibleSince != null) {
+    merged.chatVisibleSince = current.chatVisibleSince;
+  }
+
+  if (roomUsersEqual(incoming.users, current.users)) {
+    merged.users = current.users;
+  } else {
+    // 广播可能省略 location，合并时按 userId 保留已有定位
+    const prevById = new Map(current.users.map((user) => [user.id, user]));
+    merged.users = incoming.users.map((user) => {
+      const prev = prevById.get(user.id);
+      if (!prev) return user;
+      if (user.location) return user;
+      if (!prev.location) return user;
+      return { ...user, location: prev.location };
+    });
+  }
   if (roomQueueEqual(incoming.queue, current.queue)) merged.queue = current.queue;
   if (incoming.current === current.current
     || (incoming.current && current.current && incoming.current.queueId === current.current.queueId

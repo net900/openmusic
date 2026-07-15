@@ -82,6 +82,7 @@ interface Props {
       replyTo?: ChatReplyRef | null;
       imageUrl?: string;
       imageKey?: string;
+      asSticker?: boolean;
     },
   ) => Promise<{ success: boolean; error?: string }>;
   onStickToBottom: () => void;
@@ -344,7 +345,7 @@ const ChatInputBar = forwardRef<ChatInputBarHandle, Props>(function ChatInputBar
     setSending(true);
     setError('');
 
-    const res = await sendChat('', { imageUrl, replyTo: currentReplyTo });
+    const res = await sendChat('', { imageUrl, asSticker: true, replyTo: currentReplyTo });
     finishStickerSend(currentReplyTo, res.success, res.error);
   };
 
@@ -357,8 +358,39 @@ const ChatInputBar = forwardRef<ChatInputBarHandle, Props>(function ChatInputBar
     setSending(true);
     setError('');
 
-    const res = await sendChat('', { imageUrl, imageKey, replyTo: currentReplyTo });
-    finishStickerSend(currentReplyTo, res.success, res.error);
+    try {
+      let res: { success: boolean; error?: string };
+      // 已配置图床时先上传，避免数 MB 的 data URL 经 WebSocket 广播导致超时
+      if (chatUploadEnabled && imageUrl.startsWith('data:')) {
+        const blob = await (await fetch(imageUrl)).blob();
+        const ext = (blob.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+        const file = new File([blob], `sticker.${ext}`, {
+          type: blob.type || 'image/png',
+          lastModified: Date.now(),
+        });
+        const uploaded = await uploadChatImage(roomMeta.id, file);
+        res = await sendChat('', {
+          imageUrl: uploaded.url,
+          imageKey: uploaded.key,
+          asSticker: true,
+          replyTo: currentReplyTo,
+        });
+      } else {
+        res = await sendChat('', {
+          imageUrl,
+          imageKey,
+          asSticker: true,
+          replyTo: currentReplyTo,
+        });
+      }
+      finishStickerSend(currentReplyTo, res.success, res.error);
+    } catch (err) {
+      onReplyChange(currentReplyTo);
+      const message = err instanceof Error ? err.message : '发送失败';
+      setError(message);
+      setSending(false);
+      throw (err instanceof Error ? err : new Error(message));
+    }
   };
 
   const deleteTextBeforeCursor = (count: number) => {

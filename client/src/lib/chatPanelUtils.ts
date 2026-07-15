@@ -33,16 +33,29 @@ export function formatChatTime(timestamp: number): string {
   }
 }
 
-export function isChatStickerMessage(imageUrl?: string | null, imageKey?: string | null) {
+export function isChatStickerMessage(
+  imageUrl?: string | null,
+  imageKey?: string | null,
+  asSticker?: boolean | null,
+) {
+  if (asSticker) return true;
+  if (imageKey && String(imageKey).startsWith('local-sticker:')) return true;
   if (!imageUrl) return false;
   if (!imageKey) return true;
-  return String(imageKey).startsWith('local-sticker:');
+  return false;
 }
 
-export function compactReplyText(text: string, imageUrl?: string | null, imageKey?: string | null) {
+export function compactReplyText(
+  text: string,
+  imageUrl?: string | null,
+  imageKey?: string | null,
+  asSticker?: boolean | null,
+) {
   const normalized = text.replace(/\s+/g, ' ').trim();
   if (normalized) return normalized.slice(0, 48);
-  if (imageUrl) return isChatStickerMessage(imageUrl, imageKey) ? '[表情包]' : '[图片]';
+  if (imageUrl || imageKey || asSticker) {
+    return isChatStickerMessage(imageUrl, imageKey, asSticker) ? '[表情包]' : '[图片]';
+  }
   return '';
 }
 

@@ -92,7 +92,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   append: (message) => {
     const state = get();
     if (state.chatVisibleSince != null && message.timestamp < state.chatVisibleSince) return;
-    if (state.messages.some((m) => m.id === message.id)) return;
+    const existingIndex = state.messages.findIndex((m) => m.id === message.id);
+    if (existingIndex >= 0) {
+      const existing = state.messages[existingIndex];
+      // 允许后到的完整图片补全此前占位消息
+      if (!existing.imageUrl && message.imageUrl) {
+        const next = state.messages.slice();
+        next[existingIndex] = { ...existing, ...message };
+        set({ messages: next });
+      }
+      return;
+    }
     if (
       message.kind === 'welcome'
       && message.targetUserId
@@ -100,7 +110,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     ) {
       return;
     }
-    set({ messages: [...state.messages, message] });
+    const nextMessages = [...state.messages, message];
+    // 人多刷屏时限制内存与虚拟列表高度计算压力
+    const trimmed = nextMessages.length > 400
+      ? nextMessages.slice(nextMessages.length - 400)
+      : nextMessages;
+    set({ messages: trimmed });
   },
 
   prependOlder: (messages, hasMoreOlder) => {

@@ -26,10 +26,18 @@ function syncRoomPlaybackFromState(state: PlaybackState) {
   const { room } = useRoomStore.getState();
   if (!room || room.id !== state.roomId) return;
   if (!room.current || room.current.queueId !== state.trackId) return;
+
+  const nextPlaying = state.status === 'playing';
+  const nextTime = getPlaybackTime(state);
+  // 忽略纯进度微调，避免人多时 playback_state 频繁 setRoom 拖垮整页渲染
+  if (room.isPlaying === nextPlaying && Math.abs((room.currentTime || 0) - nextTime) < 1.25) {
+    return;
+  }
+
   useRoomStore.getState().setRoom({
     ...room,
-    currentTime: getPlaybackTime(state),
-    isPlaying: state.status === 'playing',
+    currentTime: nextTime,
+    isPlaying: nextPlaying,
   });
 }
 

@@ -53,7 +53,10 @@ interface Props {
 }
 
 export default function QueuePanel({ fillHeight = false }: Props) {
-  const room = useRoomStore((s) => s.room);
+  const queue = useRoomStore((s) => s.room?.queue);
+  const currentSong = useRoomStore((s) => s.room?.current);
+  const memberTiers = useRoomStore((s) => s.room?.memberTiers);
+  const hasRoom = useRoomStore((s) => Boolean(s.room));
   const nickname = useRoomStore((s) => s.nickname);
   const mySocketId = useRoomStore((s) => s.mySocketId);
   const canControlPlayback = useRoomStore((s) => s.canControlPlayback);
@@ -65,15 +68,15 @@ export default function QueuePanel({ fillHeight = false }: Props) {
   const [virtualListHeight, setVirtualListHeight] = useState(LIST_HEIGHT);
 
   const allSongs = useMemo<QueueRowSong[]>(() => {
-    if (!room) return [];
     return [
-      ...(room.current ? [{ ...room.current, isCurrent: true }] : []),
-      ...room.queue.map((s) => ({ ...s, isCurrent: false })),
+      ...(currentSong ? [{ ...currentSong, isCurrent: true }] : []),
+      ...(queue || []).map((s) => ({ ...s, isCurrent: false })),
     ];
-  }, [room]);
+  }, [queue, currentSong]);
 
-  const currentKey = room?.current?.queueId || '';
+  const currentKey = currentSong?.queueId || '';
   const useVirtualList = allSongs.length >= VIRTUAL_THRESHOLD;
+  const prevCurrentKeyRef = useRef(currentKey);
 
   useEffect(() => {
     if (!fillHeight || !useVirtualList) return;
@@ -88,7 +91,12 @@ export default function QueuePanel({ fillHeight = false }: Props) {
     return () => ro.disconnect();
   }, [fillHeight, useVirtualList]);
 
+  // 仅在「当前曲目切换」时跟滚；点赞/插队等队列重排不要拽回顶部
   useEffect(() => {
+    const switched = prevCurrentKeyRef.current !== currentKey;
+    prevCurrentKeyRef.current = currentKey;
+    if (!switched || !currentKey) return;
+
     if (useVirtualList) {
       const idx = allSongs.findIndex((song) => song.isCurrent);
       if (idx >= 0) listRef.current?.scrollToItem(idx, 'smart');
@@ -139,7 +147,7 @@ export default function QueuePanel({ fillHeight = false }: Props) {
 
   const rowData = useMemo<RowData>(() => ({
     songs: allSongs,
-    memberTiers: room?.memberTiers,
+    memberTiers,
     mySocketId,
     nickname,
     canControlPlayback,
@@ -150,7 +158,7 @@ export default function QueuePanel({ fillHeight = false }: Props) {
     onBan: handleBanSong,
   }), [
     allSongs,
-    room?.memberTiers,
+    memberTiers,
     mySocketId,
     nickname,
     canControlPlayback,
@@ -160,7 +168,7 @@ export default function QueuePanel({ fillHeight = false }: Props) {
     handleBanSong,
   ]);
 
-  if (!room) return null;
+  if (!hasRoom) return null;
 
   if (allSongs.length === 0) {
     return (
@@ -181,7 +189,7 @@ export default function QueuePanel({ fillHeight = false }: Props) {
       key={song.queueId || `current-${song.id}`}
       song={song}
       index={i}
-      memberTier={song.requestedById ? room.memberTiers?.[song.requestedById] : undefined}
+      memberTier={song.requestedById ? memberTiers?.[song.requestedById] : undefined}
       mySocketId={mySocketId}
       nickname={nickname}
       canControlPlayback={canControlPlayback}

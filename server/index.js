@@ -79,6 +79,8 @@ import {
   reportTrackDuration,
   setOnRoomPrefetchReady,
   serializeRoomForViewer,
+  prepareRoomBroadcast,
+  roomUpdateForViewer,
 } from './roomManager.js';
 import {
   isCyapiConfigured,
@@ -139,8 +141,11 @@ const io = new Server(httpServer, {
     origin: corsOrigin,
     methods: ['GET', 'POST'],
   },
+  // 本地表情包以 data URL 经 WS 发送，默认 1MB 缓冲会直接断开连接
+  maxHttpBufferSize: 8 * 1024 * 1024,
+  // base64 表情几乎压不动，抬高阈值避免人多时 CPU 被 deflate 打满
   perMessageDeflate: {
-    threshold: 1024,
+    threshold: 262144,
   },
   httpCompression: true,
 });
@@ -279,8 +284,8 @@ function attachUserLocation(roomId, userId, ip) {
   updateUserLocation(roomId, userId, initialLocation);
 
   void lookupIpLocation(ip).then((location) => {
-    const updated = updateUserLocation(roomId, userId, location);
-    if (updated) broadcastRoomUpdate(roomId);
+    // 仅更新内存字段，不触发全房 room_update（进房风暴时定位二次广播是卡顿主因之一）
+    updateUserLocation(roomId, userId, location);
   }).catch(() => {});
 }
 
@@ -1036,16 +1041,102 @@ function getViewerRoomPayload(socket, roomId) {
   return serializeRoomForViewer(roomId, getSocketUserId(socket));
 }
 
-function broadcastRoomUpdate(roomId) {
+/** 合并同房短时间内的多次 room_update，减轻人多时 O(N) 风暴 */
+const ROOM_BROADCAST_DEBOUNCE_MS = 80;
+const ROOM_BROADCAST_MAX_WAIT_MS = 220;
+const pendingRoomBroadcasts = new Map();
+
+function clearPendingRoomBroadcast(normalized) {
+  const pending = pendingRoomBroadcasts.get(normalized);
+  if (!pending) return;
+  if (pending.timer) clearTimeout(pending.timer);
+  if (pending.maxTimer) clearTimeout(pending.maxTimer);
+  pendingRoomBroadcasts.delete(normalized);
+}
+
+function flushRoomBroadcast(normalized) {
+  clearPendingRoomBroadcast(normalized);
+  doBroadcastRoomUpdate(normalized);
+}
+
+/**
+ * @param {string} roomId
+ * @param {{ immediate?: boolean }} [options]
+ */
+function broadcastRoomUpdate(roomId, options = {}) {
+  const normalized = roomId?.toUpperCase();
+  if (!normalized) return;
+
+  if (options.immediate) {
+    clearPendingRoomBroadcast(normalized);
+    doBroadcastRoomUpdate(normalized);
+    return;
+  }
+
+  let pending = pendingRoomBroadcasts.get(normalized);
+  if (!pending) {
+    pending = { timer: null, maxTimer: null };
+    pendingRoomBroadcasts.set(normalized, pending);
+    pending.maxTimer = setTimeout(() => flushRoomBroadcast(normalized), ROOM_BROADCAST_MAX_WAIT_MS);
+  }
+
+  if (pending.timer) clearTimeout(pending.timer);
+  pending.timer = setTimeout(() => flushRoomBroadcast(normalized), ROOM_BROADCAST_DEBOUNCE_MS);
+}
+
+function doBroadcastRoomUpdate(roomId) {
   const normalized = roomId?.toUpperCase();
   if (!normalized) return;
   const sockets = io.sockets.adapter.rooms.get(normalized);
   if (!sockets?.size) return;
 
+  const prepared = prepareRoomBroadcast(normalized);
+  if (!prepared) return;
+
+  const muteAll = Boolean(prepared.room.muteAll);
+  const basePayload = {
+    ...prepared.shared,
+    chatMuted: muteAll,
+  };
+
+  const personalized = [];
   for (const sid of sockets) {
     const viewerId = socketToUserId.get(sid);
-    const payload = serializeRoomForViewer(normalized, viewerId);
-    if (payload) io.to(sid).emit('room_update', payload);
+    const payload = roomUpdateForViewer(prepared, viewerId);
+    if (!payload) continue;
+
+    const needsPersonal = payload.chatMuted !== muteAll
+      || payload.mutedUserIds != null
+      || payload.userNicknames != null
+      || payload.bannedSongs != null;
+
+    if (needsPersonal) {
+      personalized.push({ sid, payload });
+    }
+  }
+
+  // 绝大多数成员载荷一致：整房一次 emit，仅房主/管理员/被禁言者补一次私信
+  if (personalized.length === 0) {
+    io.to(normalized).emit('room_update', basePayload);
+    return;
+  }
+
+  if (personalized.length >= sockets.size) {
+    for (const entry of personalized) {
+      io.to(entry.sid).emit('room_update', entry.payload);
+    }
+    return;
+  }
+
+  const personalSids = new Set(personalized.map((entry) => entry.sid));
+  let target = io.to(normalized);
+  for (const sid of personalSids) {
+    target = target.except(sid);
+  }
+  target.emit('room_update', basePayload);
+
+  for (const entry of personalized) {
+    io.to(entry.sid).emit('room_update', entry.payload);
   }
 }
 
@@ -1061,7 +1152,8 @@ setOnRoomPrefetchReady((roomId) => {
 });
 
 function emitRoomAndPlayback(roomId, room) {
-  broadcastRoomUpdate(roomId);
+  // 切歌/队列结构变化：立即下发完整 room + playback
+  broadcastRoomUpdate(roomId, { immediate: true });
   broadcastPlaybackState(roomId);
 
   if (room?.randomLoading && !room.current) {
@@ -1071,12 +1163,17 @@ function emitRoomAndPlayback(roomId, room) {
         emitRoomAndPlayback(roomId, nextRoom);
         return;
       }
-      broadcastRoomUpdate(roomId);
+      broadcastRoomUpdate(roomId, { immediate: true });
       broadcastPlaybackState(roomId);
     }).catch((err) => {
       console.error('Ensure playback after loading state failed:', err.message);
     });
   }
+}
+
+/** 仅播放时钟变化（暂停/播放/seek）：只推 playback_state，避免全量 users+queue 风暴 */
+function emitPlaybackOnly(roomId) {
+  broadcastPlaybackState(roomId);
 }
 
 async function advanceEndedRoomNow(roomId, expectedQueueId = '') {
@@ -1149,7 +1246,7 @@ io.on('connection', (socket) => {
     if (prevRoomId && prevRoomId !== id) {
       socket.leave(prevRoomId);
       const prevResult = removeUser(prevRoomId, prevUserId, socket.id);
-      if (prevResult && !prevResult.empty) {
+      if (prevResult?.userRemoved && !prevResult.empty) {
         broadcastRoomUpdate(prevRoomId);
       }
     }
@@ -1201,10 +1298,7 @@ io.on('connection', (socket) => {
     const playbackState = joinInternal ? buildPlaybackState(joinInternal) : null;
 
     const joinUser = joinInternal?.users.get(userId);
-    broadcastRoomUpdate(id);
-    if (welcomeMessage) {
-      socket.to(id).emit('chat_message', welcomeMessage);
-    }
+    // 先 ACK 再广播：人数多时 O(N) 序列化/推送不应阻塞进房方超时
     callback?.({
       success: true,
       room: serializeRoomForViewer(id, userId) || roomPayload,
@@ -1219,6 +1313,13 @@ io.on('connection', (socket) => {
       isAdmin: (roomPayload.adminIds || []).includes(userId),
       canControlPlayback: roomPayload.creatorId === userId || (roomPayload.adminIds || []).includes(userId),
       isPlaybackLeader: roomPayload.ownerId === userId,
+    });
+
+    setImmediate(() => {
+      broadcastRoomUpdate(id);
+      if (welcomeMessage) {
+        socket.to(id).emit('chat_message', welcomeMessage);
+      }
     });
 
     ensurePlayback(id).then((room) => {
@@ -1586,7 +1687,7 @@ io.on('connection', (socket) => {
     const userId = getSocketUserId(socket);
     socketToUserId.delete(socket.id);
     const result = removeUser(roomId, userId, socket.id);
-    if (result && !result.empty) {
+    if (result?.userRemoved && !result.empty) {
       broadcastRoomUpdate(roomId);
     }
     callback?.({ success: true });
@@ -1748,8 +1849,12 @@ io.on('connection', (socket) => {
       return;
     }
 
-    broadcastRoomUpdate(roomId);
-    callback?.({ success: true, liked: result.liked, room: getViewerRoomPayload(socket, roomId) });
+    // 点赞会改队列排序：只推 queue/current，不下发整包 users
+    io.to(roomId).emit('queue_snapshot', {
+      queue: result.queue || [],
+      current: result.current || null,
+    });
+    callback?.({ success: true, liked: result.liked });
   });
 
   socket.on('approve_jump', async ({ requestId }, callback) => {
@@ -1852,7 +1957,7 @@ io.on('connection', (socket) => {
     callback?.({ success: true, room: getViewerRoomPayload(socket, roomId) });
   });
 
-  socket.on('send_chat', ({ text, mentions, replyTo, imageUrl, imageKey }, callback) => {
+  socket.on('send_chat', ({ text, mentions, replyTo, imageUrl, imageKey, asSticker }, callback) => {
     if (rejectReadOnly(socket, callback)) return;
     if (rejectRateLimited(socket, limitSocketChat, 'send_chat', callback)) return;
 
@@ -1867,14 +1972,25 @@ io.on('connection', (socket) => {
       replyTo,
       imageUrl,
       imageKey,
+      asSticker,
     });
     if (result.error) {
       callback?.({ success: false, error: result.error });
       return;
     }
 
-    io.to(roomId).emit('chat_message', result.message);
+    // 先 ACK 再广播，避免大图表情包推给全员时发送方超时
     callback?.({ success: true, message: result.message });
+
+    const rawUrl = String(result.message?.imageUrl || '');
+    const hugeDataUrl = rawUrl.startsWith('data:') && rawUrl.length > 12 * 1024;
+    if (hugeDataUrl) {
+      // 超大 data URL：其他人只收占位，发送者收完整图（socket.to 不含自己）
+      socket.to(roomId).emit('chat_message', { ...result.message, imageUrl: null });
+      socket.emit('chat_message', result.message);
+    } else {
+      io.to(roomId).emit('chat_message', result.message);
+    }
   });
 
   socket.on('toggle_chat_reaction', ({ messageId, emoji }, callback) => {
@@ -2030,7 +2146,7 @@ io.on('connection', (socket) => {
       callback?.({ success: false, error: '仅房主可暂停/播放' });
       return;
     }
-    emitRoomAndPlayback(roomId, updated);
+    emitPlaybackOnly(roomId);
     callback?.({ success: true, room: getViewerRoomPayload(socket, roomId) });
   });
 
@@ -2049,7 +2165,7 @@ io.on('connection', (socket) => {
       callback?.({ success: false, error: '仅房主可调节进度' });
       return;
     }
-    emitRoomAndPlayback(roomId, updated);
+    emitPlaybackOnly(roomId);
     callback?.({ success: true, room: getViewerRoomPayload(socket, roomId) });
   });
 
@@ -2063,9 +2179,9 @@ io.on('connection', (socket) => {
 
     setTimeout(() => {
       const result = removeUser(roomId, userId, socket.id);
-      if (result?.deleted || result?.empty) return;
+      // 多端同用户仍在线、或房间已空：不必全房推送
+      if (!result?.userRemoved || result.empty) return;
       broadcastRoomUpdate(roomId);
-      broadcastPlaybackState(roomId);
     }, DISCONNECT_GRACE_MS);
   });
 });

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
@@ -369,13 +369,19 @@ export default function Room() {
     lastSongRequestAtRef.current,
   );
   const canOpenRoomSettings = isOwner || canControlPlayback;
-  const songRequestSettings: SongRequestSettings = {
+  const songRequestSettings: SongRequestSettings = useMemo(() => ({
     enabled: room?.songRequestEnabled !== false,
     minStayMinutes: Math.floor((room?.songRequestMinStaySec ?? 0) / 60),
     maxPerUser: room?.songRequestMaxPerUser ?? 0,
     cooldownSec: room?.songRequestCooldownSec ?? 0,
     queueMaxLength: room?.queueMaxLength ?? 200,
-  };
+  }), [
+    room?.songRequestEnabled,
+    room?.songRequestMinStaySec,
+    room?.songRequestMaxPerUser,
+    room?.songRequestCooldownSec,
+    room?.queueMaxLength,
+  ]);
 
   const openRenameModal = useCallback(() => {
     if (!room) return;
@@ -2128,7 +2134,7 @@ export default function Room() {
 
             <div className="flex items-center gap-1 sm:gap-2">
 
-              <Tooltip side="bottom" content={pureMode ? '退出纯净模式（电脑端右侧滑入聊天）' : '纯净模式：隐藏动效与热榜，标签页低调伪装'}>
+              <Tooltip side="bottom" content={pureMode ? '退出纯净模式（电脑端右侧滑入聊天）' : '纯净模式：隐藏动效与热榜，保留搜索与播放队列；标签页低调伪装'}>
                 <button
                   type="button"
                   onClick={handlePureModeToggle}
@@ -2268,7 +2274,7 @@ export default function Room() {
               </div>
             </div>
 
-            {isLgUp && !pureMode && (
+            {isLgUp && (
             <div className="flex-1 min-h-0 flex-col mt-1 flex">
               {renderQueueSection(true)}
             </div>

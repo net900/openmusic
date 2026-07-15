@@ -21,7 +21,7 @@
 * 🔍 聊天表情包搜索（接口盒子 API，可选）
 * 😊 微信表情包（扫码采集文件传输助手，本机存储，房间内发送）
 * 📷 聊天发图（七牛云 OSS，可选；房间空置销毁后自动清理）
-* 🧘 纯净模式（隐藏动效与热榜、标签页低调伪装；聊天图默认不加载，点击后在消息内展示）
+* 🧘 纯净模式（隐藏动效与热榜、标签页低调伪装；保留搜索与播放队列；聊天图默认不加载，点击后在消息内展示）
 * ⚙️ 房间设置：公告、FM 漫游、贵宾、点歌规则与禁播
 * 🛡️ 点歌防刷：冷却间隔、每人待播上限、队列长度上限
 * 🚫 禁播歌曲（按歌名匹配，同名跨平台均不可点入）
@@ -94,10 +94,16 @@
 
 ### Docker（Meting-API）
 
+音源接口使用 [qq01-hub/Meting-API](https://github.com/qq01-hub/Meting-API)，可用下列 Docker 镜像快速部署：
+
 ```bash
-docker pull ghcr.io/mikus-loli/meting-api:latest
-docker run -d --name meting -p 3000:3000 ghcr.io/mikus-loli/meting-api:latest
+docker pull w3126197382/meting-api:latest
+docker run -d --name meting -p 3000:3000 w3126197382/meting-api:latest
 ```
+
+接口项目地址：https://github.com/qq01-hub/Meting-API
+
+建议在 Meting 管理后台（`/admin`，默认 `admin` / `admin123`）配置红点渠道 Cookie。
 
 ### 启动 OpenMusic
 

@@ -34,6 +34,7 @@ let socketListenersAttached = false;
 let socketConnectRequested = false;
 
 const SOCKET_ACK_TIMEOUT_MS = 8000;
+const SOCKET_IMAGE_ACK_TIMEOUT_MS = 20000;
 
 type JoinSession = {
   roomId: string;
@@ -135,9 +136,10 @@ function emitWithAck<TResponse>(
   event: string,
   payload: unknown,
   fallback: TResponse,
+  timeoutMs = SOCKET_ACK_TIMEOUT_MS,
 ): Promise<TResponse> {
   return new Promise((resolve) => {
-    getSocket().timeout(SOCKET_ACK_TIMEOUT_MS).emit(
+    getSocket().timeout(timeoutMs).emit(
       event,
       payload,
       (err: Error | null, res: TResponse | undefined) => {
@@ -443,7 +445,7 @@ let prefetchDebounceTimer = 0;
         users: room.users?.length ?? 0,
         randomLoading: room.randomLoading,
       }));
-      const { mySocketId, room: prevRoom } = useRoomStore.getState();
+      const { room: prevRoom } = useRoomStore.getState();
 
       if (prevRoom?.id === room.id && room.current) {
         const prevKey = prevRoom.current ? songKey(prevRoom.current) : null;
@@ -467,13 +469,11 @@ let prefetchDebounceTimer = 0;
 
       applyRoomSnapshot(room);
 
-      if (mySocketId) {
-        useRoomStore.getState().syncRolesFromRoom(room);
-      }
-
       window.clearTimeout(prefetchDebounceTimer);
       prefetchDebounceTimer = window.setTimeout(() => {
-        prefetchUpcomingFromRoom(room);
+        const live = useRoomStore.getState().room;
+        if (!live || live.id !== room.id) return;
+        prefetchUpcomingFromRoom(live);
       }, 400);
     };
 
@@ -481,7 +481,17 @@ let prefetchDebounceTimer = 0;
       schedulePlaybackState(state);
     };
 
-
+    const onQueueSnapshot = (payload: { queue?: RoomState['queue']; current?: RoomState['current'] }) => {
+      const current = useRoomStore.getState().room;
+      if (!current) return;
+      const nextQueue = Array.isArray(payload.queue) ? payload.queue : current.queue;
+      const nextCurrent = payload.current === undefined ? current.current : payload.current;
+      useRoomStore.getState().setRoom({
+        ...current,
+        queue: nextQueue,
+        current: nextCurrent,
+      });
+    };
 
     const onChatMessage = (message: ChatMessage) => {
       useChatStore.getState().append(message);
@@ -528,6 +538,8 @@ let prefetchDebounceTimer = 0;
     s.on('room_update', onRoomUpdate);
 
     s.on('playback_state', onPlaybackState);
+
+    s.on('queue_snapshot', onQueueSnapshot);
 
     s.on('chat_message', onChatMessage);
 
@@ -773,9 +785,17 @@ if (s.connected) {
       replyTo?: ChatReplyRef | null;
       imageUrl?: string;
       imageKey?: string;
+      asSticker?: boolean;
     } = {},
   ): Promise<{ success: boolean; error?: string }> => {
-    return emitWithAck('send_chat', { text, ...options }, { success: false, error: '连接超时，请重试' });
+    const hasImage = Boolean(options.imageUrl);
+    const timeoutMs = hasImage ? SOCKET_IMAGE_ACK_TIMEOUT_MS : SOCKET_ACK_TIMEOUT_MS;
+    return emitWithAck(
+      'send_chat',
+      { text, ...options },
+      { success: false, error: '连接超时，请重试' },
+      timeoutMs,
+    );
 
   }, []);
 

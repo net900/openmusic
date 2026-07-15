@@ -68,20 +68,21 @@ function renderReplyRefContent(
   alignEnd = false,
 ) {
   const hasText = reply.text.trim().length > 0;
-  const isSticker = isChatStickerMessage(reply.imageUrl, reply.imageKey);
+  const isSticker = isChatStickerMessage(reply.imageUrl, reply.imageKey, reply.asSticker);
   const isPhoto = Boolean(reply.imageUrl && !isSticker);
 
   return (
     <span className={`inline-flex min-w-0 max-w-full flex-wrap items-center gap-1 ${alignEnd ? 'justify-end' : ''}`}>
       {hasText && renderMessageText(reply.text, 'reply', chatScrollRoot, nicknames)}
-      {isSticker && (
+      {isSticker && reply.imageUrl && (
         <img
-          src={reply.imageUrl!}
+          src={reply.imageUrl}
           alt="表情包"
           loading="lazy"
           className="max-h-8 max-w-[3.5rem] shrink-0 rounded object-contain"
         />
       )}
+      {isSticker && !reply.imageUrl && !hasText && <span>[表情包]</span>}
       {isPhoto && !hasText && <span>[图片]</span>}
     </span>
   );
@@ -142,7 +143,7 @@ function ChatMessageRow({
   const isRoomAdmin = room.adminIds.includes(msg.userId);
   const userMemberTier = room.memberTiers?.[msg.userId];
   const user = userMap.get(msg.userId);
-  const isStickerImage = isChatStickerMessage(msg.imageUrl, msg.imageKey);
+  const isStickerImage = isChatStickerMessage(msg.imageUrl, msg.imageKey, msg.asSticker);
   const isPureStickerHidden = pureMode && isStickerImage && !pureImageRevealed;
   const isPhotoOnly = Boolean(
     msg.imageUrl && !msg.text && !isStickerImage && (!pureMode || pureImageRevealed),
@@ -164,7 +165,10 @@ function ChatMessageRow({
   };
 
   const renderStickerContent = () => {
-    if (!msg.imageUrl || !isStickerImage) return null;
+    if (!isStickerImage) return null;
+    if (!msg.imageUrl) {
+      return <span className="text-white/70">[表情包]</span>;
+    }
     if (isPureStickerHidden) {
       return (
         <button
@@ -371,6 +375,7 @@ export default memo(ChatMessageRow, (prev, next) => (
   && prev.msg.text === next.msg.text
   && prev.msg.imageUrl === next.msg.imageUrl
   && prev.msg.imageKey === next.msg.imageKey
+  && prev.msg.asSticker === next.msg.asSticker
   && reactionsKey(prev.msg.reactions) === reactionsKey(next.msg.reactions)
   && prev.pureMode === next.pureMode
   && prev.pureImageRevealed === next.pureImageRevealed

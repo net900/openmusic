@@ -14,6 +14,7 @@ import SongResultRow from './SongResultRow';
 import { immersiveGlassListFooter } from '../lib/immersiveGlass';
 import { useRoomSongKeySets } from '../hooks/useRoomSongKeySets';
 import { useFavorites } from '../hooks/useFavorites';
+import { stopSongPreview } from '../lib/songPreviewPlayer';
 
 interface Props {
   results: SearchResult[];
@@ -58,6 +59,15 @@ function SongResultList({
   useEffect(() => {
     onPageResultsChange?.(pageResults);
   }, [pageResults, onPageResultsChange]);
+
+  // 翻页 / 换关键词 / 卸载时停掉试听，避免后台继续播
+  useEffect(() => {
+    stopSongPreview({ resumeRoom: true });
+  }, [page, keyword]);
+
+  useEffect(() => () => {
+    stopSongPreview({ resumeRoom: true });
+  }, []);
 
   const handlePageSizeChange = useCallback((next: SongResultPageSize) => {
     setPageSize(next);

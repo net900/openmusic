@@ -1,11 +1,14 @@
-import { memo } from 'react';
-import { Plus, Loader2 } from 'lucide-react';
+import { memo, useCallback } from 'react';
+import { Plus, Loader2, Play, Pause } from 'lucide-react';
 import type { SearchResult } from '../types';
 import { songKey } from '../api/music';
 import SongCover from './SongCover';
 import SongRowBadges from './SongRowBadges';
 import FavoriteButton from './FavoriteButton';
+import Tooltip from './Tooltip';
 import { immersiveGlassListRow } from '../lib/immersiveGlass';
+import { useSongPreviewState } from '../hooks/useSongPreviewState';
+import { stopSongPreview, toggleSongPreview } from '../lib/songPreviewPlayer';
 
 interface Props {
   song: SearchResult;
@@ -30,6 +33,21 @@ function SongResultRow({
 }: Props) {
   const key = songKey(song);
   const artistLine = `${song.artist}${song.album ? ` · ${song.album}` : ''}`;
+  const preview = useSongPreviewState();
+  const isThisPreview = preview.key === key;
+  const previewLoading = isThisPreview && preview.status === 'loading';
+  const previewPlaying = isThisPreview && preview.status === 'playing';
+
+  const handlePreview = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    void toggleSongPreview(song);
+  }, [song]);
+
+  const handleAdd = useCallback((e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (preview.key === key) stopSongPreview({ resumeRoom: true });
+    onAdd(song);
+  }, [key, onAdd, preview.key, song]);
 
   return (
     <div
@@ -37,7 +55,7 @@ function SongResultRow({
         glassRow ? immersiveGlassListRow : 'hover:bg-netease-card/80 active:bg-netease-card/80'
       }`}
       title="双击点歌"
-      onDoubleClick={() => onAdd(song)}
+      onDoubleClick={() => handleAdd()}
     >
       <SongCover
         song={song}
@@ -50,6 +68,9 @@ function SongResultRow({
         <p className="truncate text-xs text-netease-muted" title={artistLine}>
           {artistLine}
         </p>
+        {isThisPreview && preview.status === 'error' && preview.error && (
+          <p className="truncate text-[10px] text-amber-400/90">{preview.error}</p>
+        )}
       </div>
       <SongRowBadges song={song} status={{ inQueue, played }} />
       <FavoriteButton
@@ -59,12 +80,30 @@ function SongResultRow({
         className="h-7 w-7 text-netease-muted hover:text-rose-300"
         iconClassName="h-3.5 w-3.5"
       />
+      <Tooltip content={previewPlaying ? '暂停试听' : '试听'}>
+        <button
+          type="button"
+          onClick={handlePreview}
+          disabled={previewLoading}
+          className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-all disabled:opacity-50 ${
+            previewPlaying || previewLoading
+              ? 'bg-sky-500/20 text-sky-300'
+              : 'bg-white/5 text-netease-muted hover:bg-white/10 hover:text-white'
+          } ${alwaysShowActions ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover:opacity-100'}`}
+          aria-label={previewPlaying ? '暂停试听' : '试听'}
+        >
+          {previewLoading ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : previewPlaying ? (
+            <Pause className="h-3.5 w-3.5" />
+          ) : (
+            <Play className="h-3.5 w-3.5" />
+          )}
+        </button>
+      </Tooltip>
       <button
         type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onAdd(song);
-        }}
+        onClick={handleAdd}
         disabled={addingId === key}
         className={`flex flex-shrink-0 items-center gap-1 rounded-full bg-netease-red/10 px-2.5 py-1 text-xs font-medium text-netease-red transition-all hover:bg-netease-red hover:text-white disabled:opacity-50 ${alwaysShowActions ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover:opacity-100'}`}
       >

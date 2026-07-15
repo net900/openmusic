@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Minus, Plus, Sparkles, X } from 'lucide-react';
 import { NETEASE_FM_MODE_OPTIONS, getFmModeLabel, normalizeFmMode } from '../api/music/fmMode';
@@ -19,6 +19,14 @@ export interface SongRequestSettings {
   maxPerUser: number;
   cooldownSec: number;
   queueMaxLength: number;
+}
+
+function songRequestEqual(a: SongRequestSettings, b: SongRequestSettings) {
+  return a.enabled === b.enabled
+    && a.minStayMinutes === b.minStayMinutes
+    && a.maxPerUser === b.maxPerUser
+    && a.cooldownSec === b.cooldownSec
+    && a.queueMaxLength === b.queueMaxLength;
 }
 
 interface Props {
@@ -173,6 +181,9 @@ export default function RoomSettingsModal({
   const [draftAnnouncementEnabled, setDraftAnnouncementEnabled] = useState(announcementEnabled);
   const [draftAnnouncementText, setDraftAnnouncementText] = useState(announcementText);
   const [draftSongRequest, setDraftSongRequest] = useState(songRequest);
+  const wasOpenRef = useRef(false);
+  const appliedAnnouncementRef = useRef({ enabled: announcementEnabled, text: announcementText });
+  const appliedSongRequestRef = useRef(songRequest);
 
   const tabs = useMemo(() => {
     const items: { id: SettingsTab; label: string }[] = [];
@@ -187,13 +198,58 @@ export default function RoomSettingsModal({
     return items;
   }, [isOwner, canModerate]);
 
+  // 仅在弹框从关闭→打开时初始化 tab/草稿，避免 room_update 反复把 tab 打回「漫游」
   useEffect(() => {
-    if (!open) return;
+    const justOpened = open && !wasOpenRef.current;
+    wasOpenRef.current = open;
+    if (!justOpened) return;
+
     setDraftAnnouncementEnabled(announcementEnabled);
     setDraftAnnouncementText(announcementText);
     setDraftSongRequest(songRequest);
+    appliedAnnouncementRef.current = { enabled: announcementEnabled, text: announcementText };
+    appliedSongRequestRef.current = songRequest;
     setActiveTab(tabs[0]?.id ?? 'announcement');
   }, [open, announcementEnabled, announcementText, songRequest, tabs]);
+
+  // 打开期间：服务端公告变化时，若用户未编辑（草稿仍等于上次应用值），则跟随服务端
+  useEffect(() => {
+    if (!open) return;
+    const applied = appliedAnnouncementRef.current;
+    const serverChanged = applied.enabled !== announcementEnabled
+      || applied.text !== announcementText;
+    if (!serverChanged) return;
+
+    setDraftAnnouncementEnabled((prev) => {
+      if (prev !== applied.enabled) return prev; // 用户已改开关
+      return announcementEnabled;
+    });
+    setDraftAnnouncementText((prev) => {
+      if (prev !== applied.text) return prev; // 用户已改文案
+      return announcementText;
+    });
+    appliedAnnouncementRef.current = { enabled: announcementEnabled, text: announcementText };
+  }, [open, announcementEnabled, announcementText]);
+
+  useEffect(() => {
+    if (!open) return;
+    const applied = appliedSongRequestRef.current;
+    if (songRequestEqual(applied, songRequest)) return;
+
+    setDraftSongRequest((prev) => {
+      if (!songRequestEqual(prev, applied)) return prev; // 用户有未保存修改
+      return songRequest;
+    });
+    appliedSongRequestRef.current = songRequest;
+  }, [open, songRequest]);
+
+  // 权限变化导致当前 tab 不可用时，落到第一个可用 tab
+  useEffect(() => {
+    if (!open || tabs.length === 0) return;
+    if (!tabs.some((tab) => tab.id === activeTab)) {
+      setActiveTab(tabs[0].id);
+    }
+  }, [open, tabs, activeTab]);
 
   if (!open) return null;
 

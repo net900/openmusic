@@ -81,9 +81,10 @@ export default function ChatPanel({ className = '' }: { className?: string }) {
       id: msg.id,
       userId: msg.userId,
       nickname: msg.nickname,
-      text: compactReplyText(msg.text, msg.imageUrl, msg.imageKey),
-      imageUrl: msg.imageUrl || null,
+      text: compactReplyText(msg.text, msg.imageUrl, msg.imageKey, msg.asSticker),
+      imageUrl: msg.imageUrl?.startsWith('data:') ? null : (msg.imageUrl || null),
       imageKey: msg.imageKey || null,
+      asSticker: Boolean(msg.asSticker || (msg.imageKey && msg.imageKey.startsWith('local-sticker:'))),
     });
     const isSelf = msg.userId === mySocketId || msg.nickname === nickname;
     if (!isSelf) {

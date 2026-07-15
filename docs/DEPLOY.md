@@ -6,9 +6,11 @@
 
 红点 / 绿点播放、歌词、封面、歌单搜索与导入均依赖 Meting-API。
 
+接口项目：[qq01-hub/Meting-API](https://github.com/qq01-hub/Meting-API)
+
 ```bash
-docker pull ghcr.io/mikus-loli/meting-api:latest
-docker run -d --name meting -p 3000:3000 ghcr.io/mikus-loli/meting-api:latest
+docker pull w3126197382/meting-api:latest
+docker run -d --name meting -p 3000:3000 w3126197382/meting-api:latest
 ```
 
 建议在 Meting 管理后台（`/admin`，默认 `admin` / `admin123`）配置红点渠道 Cookie。

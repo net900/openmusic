@@ -64,15 +64,25 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
     isPlaybackLeader,
   }),
   syncRolesFromRoom: (room) => {
-    const { mySocketId, myConnectionId } = get();
+    const { mySocketId, myConnectionId, isOwner, isAdmin, canControlPlayback, isPlaybackLeader } = get();
     if (!mySocketId) return;
-    const isCreator = room.creatorId === mySocketId;
-    const isAdmin = (room.adminIds || []).includes(mySocketId);
+    const nextIsOwner = room.creatorId === mySocketId;
+    const nextIsAdmin = (room.adminIds || []).includes(mySocketId);
+    const nextCanControl = nextIsOwner || nextIsAdmin;
+    const nextIsLeader = room.ownerId === mySocketId;
+    if (
+      nextIsOwner === isOwner
+      && nextIsAdmin === isAdmin
+      && nextCanControl === canControlPlayback
+      && nextIsLeader === isPlaybackLeader
+    ) {
+      return;
+    }
     set({
-      isOwner: isCreator,
-      isAdmin,
-      canControlPlayback: isCreator || isAdmin,
-      isPlaybackLeader: room.ownerId === mySocketId,
+      isOwner: nextIsOwner,
+      isAdmin: nextIsAdmin,
+      canControlPlayback: nextCanControl,
+      isPlaybackLeader: nextIsLeader,
       myConnectionId,
     });
   },

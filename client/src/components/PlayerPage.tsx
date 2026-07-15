@@ -23,6 +23,7 @@ import Tooltip from './Tooltip';
 import VolumeControl from './VolumeControl';
 import FavoriteButton from './FavoriteButton';
 import AmbientCoverLayers from './AmbientCoverLayers';
+import { updateMediaSessionPlaybackState } from '../lib/mediaSession';
 
 
 
@@ -68,6 +69,7 @@ export default memo(function PlayerPage({ onClose }: Props) {
     if (!next && room) {
       localPlayback?.(false);
     }
+    updateMediaSessionPlaybackState(next ? 'playing' : 'paused');
     togglePlay(next);
     if (next) localPlayback?.(true);
   };

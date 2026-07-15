@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState, type MutableRefObject } from 
 import { useRoomStore } from '../stores/roomStore';
 import { useAudioStore } from '../stores/audioStore';
 import { useSocket } from '../hooks/useSocket';
+import { useMediaSession } from '../hooks/useMediaSession';
 import { getTrackKey } from '../api/music';
 import { snapSmoothPlaybackTime } from '../hooks/useSmoothPlaybackTime';
 import {
@@ -163,7 +164,7 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
   const setRetryPlayback = useAudioStore((s) => s.setRetryPlayback);
   const playbackVersion = useAudioStore((s) => s.playbackVersion);
   const trackReloadNonce = useAudioStore((s) => s.trackReloadNonce);
-  const { togglePlay, seek, skipSong, finishSong } = useSocket();
+  const { togglePlay, seek, skipSong, finishSong, requestSkip: requestSkipVote } = useSocket();
 
   const endedTrackKey = useRef<string | null>(null);
   const loadGeneration = useRef(0);
@@ -895,6 +896,14 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
     }
     seek(capped);
   }, [controller, seek, applySync]);
+
+  useMediaSession({
+    enabled: !tvMode,
+    togglePlay,
+    skipSong,
+    requestSkip: requestSkipVote,
+    seekTo: handleSeek,
+  });
 
   useEffect(() => {
     setSeekPlayback(handleSeek);

@@ -389,6 +389,8 @@ const ChatMessageList = forwardRef<ChatMessageListHandle, Props>(function ChatMe
     for (const msg of messages) {
       if (msg.kind !== 'welcome' || welcomeConfettiIdsRef.current.has(msg.id)) continue;
       welcomeConfettiIdsRef.current.add(msg.id);
+      // 仅本人迎宾触发特效，避免人多时全员 canvas 礼花卡顿
+      if (msg.targetUserId && myUserId && msg.targetUserId !== myUserId) continue;
       if (msg.timestamp < welcomeConfettiSessionStartRef.current - WELCOME_CONFETTI_LIVE_GRACE_MS) continue;
 
       const targetId = msg.targetUserId || msg.id;
@@ -399,7 +401,7 @@ const ChatMessageList = forwardRef<ChatMessageListHandle, Props>(function ChatMe
       welcomeConfettiCooldownRef.current.set(targetId, now);
       scheduleWelcomeConfetti();
     }
-  }, [messages, pureMode, scheduleWelcomeConfetti]);
+  }, [messages, pureMode, scheduleWelcomeConfetti, myUserId]);
 
   useLayoutEffect(() => {
     if (reactionPickerOpenRef.current) return;
@@ -518,7 +520,7 @@ const ChatMessageList = forwardRef<ChatMessageListHandle, Props>(function ChatMe
       const notify = () => {
         if (Notification.permission !== 'granted') return;
         const notification = new Notification(`${msg.nickname} 提到了你`, {
-          body: compactReplyText(msg.text, msg.imageUrl, msg.imageKey),
+          body: compactReplyText(msg.text, msg.imageUrl, msg.imageKey, msg.asSticker),
           tag: `openmusic-mention-${roomMeta.id}-${msg.id}`,
           silent: false,
         });

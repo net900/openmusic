@@ -24,12 +24,12 @@ export function roomUsersEqual(a: RoomUser[], b: RoomUser[]): boolean {
   for (let i = 0; i < a.length; i += 1) {
     const left = a[i];
     const right = b[i];
+    // 故意忽略 location：广播常省略，且定位变化不应拖垮整树重渲染
     if (
       left.id !== right.id
       || left.nickname !== right.nickname
       || left.readOnly !== right.readOnly
       || left.joinedAt !== right.joinedAt
-      || left.location !== right.location
     ) {
       return false;
     }
