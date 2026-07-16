@@ -198,8 +198,6 @@ export default function Home() {
   const [createPassword, setCreatePassword] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [joinPassword, setJoinPassword] = useState('');
-  const [passwordTarget, setPasswordTarget] = useState<RoomSummary | null>(null);
-  const [cardPassword, setCardPassword] = useState('');
   const [downloadModalOpen, setDownloadModalOpen] = useState(false);
 
   const fetchRooms = useCallback(async (silent = false) => {
@@ -270,14 +268,6 @@ export default function Home() {
         setError('房间不存在，请检查房间号');
         return;
       }
-      if (result.isLocked && !result.hasPassword) {
-        setError('房间已上锁，禁止进入');
-        return;
-      }
-      if (result.hasPassword && !joinPassword.trim()) {
-        setError('该房间需要密码');
-        return;
-      }
       setShowJoin(false);
       goToRoom(code, joinPassword.trim() || undefined);
     } catch {
@@ -294,29 +284,9 @@ export default function Home() {
       setNickname(generated);
     }
     setError('');
-    if (room.isLocked && !room.hasPassword) {
-      setError('房间已上锁，禁止进入');
-      return;
-    }
-    if (room.hasPassword) {
-      setPasswordTarget(room);
-      setCardPassword('');
-    } else {
-      navigate(`/room/${room.id}`);
-    }
+    // 密码房也先直接进：原创建者免密；其他人由房间页再弹密码
+    navigate(`/room/${room.id}`);
   }, [nickname, navigate, setNickname]);
-
-  const handlePasswordJoin = () => {
-    if (!passwordTarget) return;
-    ensureNickname();
-    if (!cardPassword.trim()) {
-      setError('请输入房间密码');
-      return;
-    }
-    const id = passwordTarget.id;
-    setPasswordTarget(null);
-    goToRoom(id, cardPassword.trim());
-  };
 
   const { recent: recentRooms, others: otherRooms } = useMemo(
     () => partitionRoomsByRecent(rooms),
@@ -622,36 +592,6 @@ export default function Home() {
           >
             {actionLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowRight className="w-5 h-5" />}
             加入房间
-          </button>
-        </Modal>
-      )}
-
-      {passwordTarget && (
-        <Modal
-          title={`进入 ${passwordTarget.name}`}
-          onClose={() => { setPasswordTarget(null); setCardPassword(''); }}
-        >
-          <div className="flex items-center gap-2 text-amber-400/90 text-sm mb-4">
-            <Lock className="w-4 h-4" />
-            该房间已设置密码
-          </div>
-          <input
-            type="password"
-            value={cardPassword}
-            onChange={(e) => setCardPassword(e.target.value)}
-            placeholder="输入房间密码"
-            maxLength={32}
-            className={`${inputCls} mb-5`}
-            onKeyDown={(e) => e.key === 'Enter' && handlePasswordJoin()}
-            autoFocus
-          />
-          <button
-            type="button"
-            onClick={handlePasswordJoin}
-            className="w-full flex items-center justify-center gap-2 bg-netease-red hover:bg-red-500 text-white font-medium py-3 rounded-xl transition-colors"
-          >
-            <ArrowRight className="w-5 h-5" />
-            确认进入
           </button>
         </Modal>
       )}

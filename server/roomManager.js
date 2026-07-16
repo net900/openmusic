@@ -111,10 +111,12 @@ export function verifyRoomPassword(roomId, password, options = {}) {
   if (!room) return { ok: false, error: '房间不存在' };
 
   const clientId = sanitizeCreatorId(options.clientId);
+  // 原创建者始终可进：无密码上锁 / 有密码房均免密
+  if (clientId && room.creatorId === clientId) {
+    return { ok: true };
+  }
+
   if (room.isLocked && !room.passwordHash) {
-    if (clientId && room.creatorId === clientId) {
-      return { ok: true };
-    }
     return { ok: false, error: '房间已上锁，禁止进入' };
   }
 

@@ -292,7 +292,12 @@ export async function checkRoom(id: string): Promise<RoomCheckResult> {
   const res = await fetchWithTimeout(`/api/rooms/${id}`);
   if (!res.ok) return { exists: false, hasPassword: false };
   const data = await res.json();
-  return { exists: true, hasPassword: Boolean(data.hasPassword), name: data.name };
+  return {
+    exists: true,
+    hasPassword: Boolean(data.hasPassword),
+    isLocked: Boolean(data.isLocked),
+    name: data.name,
+  };
 }
 
 export async function getAvailableSources(): Promise<MusicProviderMeta[]> {

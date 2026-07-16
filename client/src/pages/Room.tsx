@@ -449,7 +449,7 @@ export default function Room() {
       if (pwd && room?.id) rememberRoomPassword(room.id, pwd);
       setLockOpen(false);
       setLockPassword('');
-      showToast(pwd ? '房间已上锁（需密码进入）' : '房间已上锁（禁止进入）', 'success');
+      showToast(pwd ? '房间已上锁（他人需密码，创建者免密）' : '房间已上锁（他人无法进入，创建者免密）', 'success');
     } else {
       showToast(res.error || '上锁失败', 'error');
     }
@@ -2768,7 +2768,7 @@ export default function Room() {
             {room.isLocked ? (
               <div className="space-y-4">
                 <p className="text-sm text-white/70">
-                  房间当前已上锁{room.hasPassword ? '（需密码进入）' : '（禁止他人进入）'}。
+                  房间当前已上锁{room.hasPassword ? '（他人需密码，创建者免密）' : '（他人无法进入，创建者免密）'}。
                 </p>
                 <button
                   type="button"
@@ -2782,14 +2782,14 @@ export default function Room() {
               </div>
             ) : (
               <div className="space-y-4">
-                <p className="text-sm text-white/70">上锁后其他人无法进入。可选择设置密码，留空则完全禁止进入。</p>
+                <p className="text-sm text-white/70">上锁后其他人需密码（或无法进入）。你作为创建者始终可免密进入。</p>
                 <label className="block text-xs text-white/50 mb-1.5">进入密码（可选）</label>
                 <input
                   type="password"
                   value={lockPassword}
                   onChange={(e) => setLockPassword(e.target.value)}
                   maxLength={32}
-                  placeholder="留空则禁止任何人进入"
+                  placeholder="留空则仅创建者可进入"
                   className="w-full bg-netease-dark border border-netease-border rounded-xl px-4 py-2.5 text-white text-sm placeholder:text-netease-muted/50 focus:outline-none focus:border-netease-red/50"
                 />
                 <button
