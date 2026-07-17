@@ -7,7 +7,9 @@ import { memberTiersEqual, roomUsersEqual } from './roomStateEquality';
 export type ChatRoomSlice = {
   id: string;
   creatorId: string;
+  ownerId?: string | null;
   adminIds: string[];
+  autoPromotedAdminIds?: string[];
   users: RoomUser[];
   memberTiers?: RoomState['memberTiers'];
   muteAll?: boolean;
@@ -26,7 +28,9 @@ export function roomToChatSlice(room: RoomState): ChatRoomSlice {
   return {
     id: room.id,
     creatorId: room.creatorId || '',
+    ownerId: room.ownerId ?? null,
     adminIds: room.adminIds || [],
+    autoPromotedAdminIds: room.autoPromotedAdminIds || [],
     users: room.users,
     memberTiers: room.memberTiers,
     muteAll: room.muteAll,
@@ -39,8 +43,10 @@ export function chatRoomSlicesEqual(a: ChatRoomSlice | null, b: ChatRoomSlice | 
   if (!a || !b) return false;
   return a.id === b.id
     && a.creatorId === b.creatorId
+    && a.ownerId === b.ownerId
     && a.muteAll === b.muteAll
     && stringArraysEqual(a.adminIds, b.adminIds)
+    && stringArraysEqual(a.autoPromotedAdminIds || [], b.autoPromotedAdminIds || [])
     && stringArraysEqual(a.mutedUserIds || [], b.mutedUserIds || [])
     && roomUsersEqual(a.users, b.users)
     && memberTiersEqual(a.memberTiers, b.memberTiers);
@@ -50,7 +56,9 @@ export function chatSliceToRoomMeta(slice: ChatRoomSlice): ChatRoomMeta {
   return {
     id: slice.id,
     creatorId: slice.creatorId,
+    ownerId: slice.ownerId,
     adminIds: slice.adminIds,
+    autoPromotedAdminIds: slice.autoPromotedAdminIds,
     users: slice.users,
     memberTiers: slice.memberTiers,
     muteAll: slice.muteAll,

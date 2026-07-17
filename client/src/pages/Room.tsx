@@ -2146,7 +2146,7 @@ export default function Room() {
 
                 {isOwner && <RoleBadge role="owner" />}
 
-                {isAdmin && !isOwner && <RoleBadge role="admin" />}
+                {(isAdmin || canControlPlayback) && !isOwner && <RoleBadge role="admin" />}
 
                 {canOpenRoomSettings && (
                   <Tooltip side="bottom" content="房间设置">

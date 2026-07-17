@@ -27,6 +27,17 @@ export function needsApiSign(url: string): boolean {
   }
 }
 
+/** 是否为本站媒体代理路径（需 query 签名，且使用更长有效期） */
+export function isMediaApiPath(url: string): boolean {
+  try {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
+    const parsed = new URL(url, origin);
+    return parsed.pathname === '/api/meting' || parsed.pathname === '/api/media-proxy';
+  } catch {
+    return false;
+  }
+}
+
 export function canonicalApiQuery(params: URLSearchParams): string {
   const entries: Array<[string, string]> = [];
   params.forEach((value, key) => {

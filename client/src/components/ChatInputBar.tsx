@@ -726,7 +726,11 @@ const ChatInputBar = forwardRef<ChatInputBarHandle, Props>(function ChatInputBar
                     >
                       <span className="min-w-0 truncate">{option.user.nickname}</span>
                       {option.user.id === roomMeta.creatorId && <RoleBadge role="owner" className="ml-2" />}
-                      {option.user.id !== roomMeta.creatorId && roomMeta.adminIds.includes(option.user.id) && (
+                      {option.user.id !== roomMeta.creatorId && (
+                        roomMeta.adminIds.includes(option.user.id)
+                        || (roomMeta.autoPromotedAdminIds || []).includes(option.user.id)
+                        || roomMeta.ownerId === option.user.id
+                      ) && (
                         <RoleBadge role="admin" className="ml-2" />
                       )}
                     </button>

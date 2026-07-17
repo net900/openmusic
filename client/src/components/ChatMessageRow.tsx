@@ -20,7 +20,9 @@ import { parseQQFaceTokens, QFaceLoadPriority } from '../lib/qface';
 export type ChatRoomMeta = {
   id: string;
   creatorId: string;
+  ownerId?: string | null;
   adminIds: string[];
+  autoPromotedAdminIds?: string[];
   users: RoomUser[];
   memberTiers?: Record<string, RoomMemberTier>;
   muteAll?: boolean;
@@ -171,7 +173,9 @@ function ChatMessageRow({
 
   const isMe = msg.userId === myUserId;
   const isRoomCreator = msg.userId === room.creatorId;
-  const isRoomAdmin = room.adminIds.includes(msg.userId);
+  const isRoomAdmin = room.adminIds.includes(msg.userId)
+    || (room.autoPromotedAdminIds || []).includes(msg.userId)
+    || (Boolean(room.ownerId) && room.ownerId === msg.userId && !isRoomCreator);
   const userMemberTier = room.memberTiers?.[msg.userId];
   const user = userMap.get(msg.userId);
   const isStickerImage = isChatStickerMessage(msg.imageUrl, msg.imageKey, msg.asSticker);

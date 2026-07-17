@@ -967,7 +967,7 @@ function ensureCreatorId(room, userId) {
 /**
  * 刷新播放主控：初创房主在线时由其驱动；离线时由正式指定管理接管。
  * 指定管理回到房间时，立刻收回自动提升的临时管理。
- * 仅当房主与正式管理都不在时，才临时提升最早进房的成员（仅播放权）。
+ * 仅当房主与正式管理都不在时，才临时提升最早进房的成员（播放控制 + 管理角标）。
  */
 function refreshRoomOwner(room, options = {}) {
   const { preferCreator = false } = options;
@@ -1014,6 +1014,20 @@ function refreshRoomOwner(room, options = {}) {
     room.ownerId = null;
   }
   refreshOwnerConnection(room);
+
+  // 兜底：主控离线或未设置时，强制从在线成员提升（防止房间无主控）
+  if (!isEligibleOwner(room.users.get(room.ownerId))) {
+    const fallbackId = getNextOwnerId(room);
+    if (fallbackId) {
+      revokeAutoPromotedAdmins(room);
+      if (fallbackId !== room.creatorId && !isAppointedAdmin(room, fallbackId)) {
+        ensureAdminIds(room).add(fallbackId);
+        ensureAutoPromotedAdminIds(room).add(fallbackId);
+      }
+      room.ownerId = fallbackId;
+      refreshOwnerConnection(room);
+    }
+  }
 }
 
 function getDefaultNickname(room) {

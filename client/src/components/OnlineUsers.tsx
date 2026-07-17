@@ -30,6 +30,7 @@ export default function OnlineUsers({ users, creatorId, memberTiers = {}, onNoti
   const canModerate = isOwner || isAdmin;
   const adminIds = useRoomStore((s) => s.room?.adminIds) || [];
   const autoPromotedAdminIds = useRoomStore((s) => s.room?.autoPromotedAdminIds) || [];
+  const ownerId = useRoomStore((s) => s.room?.ownerId) || null;
   const userNicknames = useRoomStore((s) => s.room?.userNicknames) || {};
   const nickname = useRoomStore((s) => s.nickname);
   const setNickname = useRoomStore((s) => s.setNickname);
@@ -246,7 +247,10 @@ export default function OnlineUsers({ users, creatorId, memberTiers = {}, onNoti
             {orderedUsers.map((user) => {
               const isMe = user.id === mySocketId;
               const isRoomCreator = Boolean(creatorId && user.id === creatorId);
-              const isAdmin = adminIds.includes(user.id);
+              const isAppointedAdmin = adminIds.includes(user.id);
+              const isTempAdmin = autoPromotedAdminIds.includes(user.id)
+                || Boolean(ownerId && user.id === ownerId && !isRoomCreator && !isAppointedAdmin);
+              const showAdminBadge = (isAppointedAdmin || isTempAdmin) && !isRoomCreator;
 
               return (
                 <div
@@ -284,7 +288,7 @@ export default function OnlineUsers({ users, creatorId, memberTiers = {}, onNoti
                           </span>
                         )}
                         {isRoomCreator && <RoleBadge role="owner" />}
-                        {isAdmin && !isRoomCreator && <RoleBadge role="admin" />}
+                        {showAdminBadge && <RoleBadge role="admin" />}
                         {memberTiers[user.id] && (
                           <MemberTierBadge tier={memberTiers[user.id]} />
                         )}
@@ -326,17 +330,17 @@ export default function OnlineUsers({ users, creatorId, memberTiers = {}, onNoti
                       )}
 
                       {canToggleAdmin(user) && (
-                        <Tooltip content={isAdmin ? '取消管理员' : '设为管理员'}>
+                        <Tooltip content={isAppointedAdmin ? '取消管理员' : '设为管理员'}>
                           <button
                             type="button"
                             onClick={() => handleToggleAdmin(user)}
                             disabled={adminTogglingId === user.id}
                             className={`rounded-lg p-1.5 transition-colors disabled:opacity-40 ${
-                              isAdmin
+                              isAppointedAdmin
                                 ? 'bg-sky-400/15 text-sky-300'
                                 : 'text-netease-muted hover:bg-sky-400/10 hover:text-sky-300'
                             }`}
-                            aria-label={isAdmin ? '取消管理员' : '设为管理员'}
+                            aria-label={isAppointedAdmin ? '取消管理员' : '设为管理员'}
                           >
                             <Shield className="w-3.5 h-3.5" />
                           </button>

@@ -2,7 +2,7 @@ import { resolveSignedApiUrl } from './signedApiUrl';
 
 export type PlaybackErrorClass = 'temporary' | 'service';
 
-const SERVICE_HTTP_STATUSES = new Set([403, 404, 502]);
+const SERVICE_HTTP_STATUSES = new Set([404, 502]);
 const URL_PROBE_TIMEOUT_MS = 5000;
 
 export const MAX_TEMP_PLAYBACK_RETRIES = 3;
