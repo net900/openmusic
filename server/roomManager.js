@@ -3304,11 +3304,10 @@ export function getSongHistory(roomId, options = {}) {
   return { songs };
 }
 
-/** 房主上报音频/元数据时长，供服务端自动切歌（不广播 room_update） */
+/** 上报音频/元数据时长，供服务端自动切歌（不广播 room_update） */
 export function reportTrackDuration(roomId, userId, queueId, durationMs, connectionId = null) {
   const room = rooms.get(roomId);
   if (!room?.current) return { error: '无当前歌曲' };
-  if (!isControllerConnection(room, userId, connectionId)) return { error: '仅房主或管理员可上报时长' };
 
   const expectedQueueId = String(queueId || '');
   if (expectedQueueId && room.current.queueId !== expectedQueueId) {
@@ -3319,7 +3318,11 @@ export function reportTrackDuration(roomId, userId, queueId, durationMs, connect
   if (!Number.isFinite(ms) || ms <= 0) return { error: '时长无效' };
 
   const existing = Number(room.current.duration || 0);
-  if (existing > 0 && ms <= existing) return { success: true, skipped: true };
+  const isController = isControllerConnection(room, userId, connectionId);
+  // 控制者可更新；其他人仅在缺失时长时补种（避免文件已结束但服务端永不 advance）
+  if (!isController && existing > 0) return { error: '仅房主或管理员可上报时长' };
+  // 允许缩短：CDN 截断预览时长常短于元数据，否则服务端永不 auto-advance
+  if (existing > 0 && Math.abs(ms - existing) < 50) return { success: true, skipped: true };
 
   room.current.duration = Math.round(ms);
   persistRoom(room);

@@ -313,6 +313,10 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
     song: QueueItem,
   ) => {
     if (result === 'beyond_duration') {
+      const mediaDur = audio.duration;
+      if (Number.isFinite(mediaDur) && mediaDur > 0) {
+        reportTrackDurationToServer(song.queueId, Math.round(mediaDur * 1000));
+      }
       handleBeyondDuration(song);
       return;
     }

@@ -24,7 +24,7 @@ const FINAL_WINDOW_SEC = 3;
 /** 播放中远端校正阈值；略低于常见 pending-snapshot 延迟，避免长期固定偏差 */
 const REMOTE_SEEK_THRESHOLD_SEC = 0.5;
 const BEYOND_DURATION_GRACE_SEC = 0.15;
-/** 本机已播完时不再反复 ended_recover，等待服务端切歌 */
+/** 本机已到媒体末尾的判定窗口（不依赖 audio.ended，规避 seek 卡死） */
 const LOCAL_ENDED_WAIT_SEC = 0.35;
 
 export type FollowerSyncResult = PlayResult | 'paused' | 'idle' | 'beyond_duration';
@@ -37,6 +37,12 @@ function durationSources() {
   return { lrcDurationMs, lrcTrackKey, mediaDurationMs, mediaTrackKey };
 }
 
+function resolveMediaDurationSec(audio: HTMLAudioElement): number {
+  const fromAudio = audio.duration;
+  if (Number.isFinite(fromAudio) && fromAudio > 0) return fromAudio;
+  return 0;
+}
+
 function resolveSyncDurationSec(
   audio: HTMLAudioElement,
   song: QueueItem,
@@ -46,9 +52,7 @@ function resolveSyncDurationSec(
   if (Number.isFinite(fromState) && fromState > 0) return fromState;
   const fromTrack = resolveTrackDurationSeconds(song, durationSources());
   if (fromTrack > 0) return fromTrack;
-  const fromAudio = audio.duration;
-  if (Number.isFinite(fromAudio) && fromAudio > 0) return fromAudio;
-  return 0;
+  return resolveMediaDurationSec(audio);
 }
 
 export function isEndedWhileServerPlaying(
@@ -69,18 +73,50 @@ function isPositionBeyondDuration(
   return durationSec > 0 && positionSec >= durationSec + BEYOND_DURATION_GRACE_SEC;
 }
 
+function isAudioNearMediaEnd(audio: HTMLAudioElement): boolean {
+  const mediaDur = resolveMediaDurationSec(audio);
+  if (mediaDur <= 0) return false;
+  return audio.currentTime >= mediaDur - LOCAL_ENDED_WAIT_SEC;
+}
+
 function isAudioAtLocalTrackEnd(
   audio: HTMLAudioElement,
   durationSec: number,
 ): boolean {
-  if (!audio.ended) return false;
-  const mediaDur = Number.isFinite(audio.duration) && audio.duration > 0
-    ? audio.duration
-    : durationSec;
-  if (mediaDur > 0) {
-    return audio.currentTime >= mediaDur - LOCAL_ENDED_WAIT_SEC;
-  }
-  return true;
+  const mediaDur = resolveMediaDurationSec(audio) || durationSec;
+  if (mediaDur <= 0) return Boolean(audio.ended);
+  // seeking/buffering 卡在末尾时 ended 可能永不为 true
+  return audio.ended || audio.currentTime >= mediaDur - LOCAL_ENDED_WAIT_SEC;
+}
+
+/**
+ * 实际音频已耗尽，但服务端时钟仍在 playing（常见于元数据/歌词时长 > 文件时长，
+ * 或 durationSec=0 导致服务端永不 auto-advance）。此时应由播放主控 finishSong。
+ */
+function shouldAdvanceAfterLocalMediaEnd(
+  audio: HTMLAudioElement,
+  song: QueueItem,
+  state?: ClientPlaybackState | null,
+): boolean {
+  if (!state || state.status !== 'playing') return false;
+  if (state.trackId && state.trackId !== song.queueId) return false;
+
+  const mediaDur = resolveMediaDurationSec(audio);
+  if (mediaDur <= 0) return false;
+  // 必须靠近文件末尾，避免 mid-track 误触发 ended 时提前切歌
+  if (!isAudioNearMediaEnd(audio)) return false;
+
+  const serverPos = getPlaybackTime(state);
+  // 服务端进度已到/超过本机文件 → 再 seek 只会卡在末尾
+  if (serverPos >= mediaDur - LOCAL_ENDED_WAIT_SEC) return true;
+
+  const syncDur = resolveSyncDurationSec(audio, song, state);
+  // 服务端无时长时不会 auto-advance
+  if (syncDur <= 0) return true;
+  // 同步时长明显长于文件（截断预览 / 错误元数据）：以文件尽头为准
+  if (syncDur > mediaDur + BEYOND_DURATION_GRACE_SEC) return true;
+
+  return false;
 }
 
 function playbackStateStillMatchesSong(song: QueueItem): boolean {
@@ -317,7 +353,7 @@ async function recoverFromEndedAudio(
 async function applyCorrectionSync(
   audio: HTMLAudioElement,
   options: ApplySyncOptions,
-): Promise<PlayResult | 'paused' | 'idle'> {
+): Promise<FollowerSyncResult> {
   const state = getClientPlaybackState();
   if (state?.trackId && state.trackId !== options.song.queueId) {
     debugLog('sync_skip', debugLine({
@@ -328,6 +364,21 @@ async function applyCorrectionSync(
     }));
     return 'idle';
   }
+
+  if (shouldAdvanceAfterLocalMediaEnd(audio, options.song, state)) {
+    const mediaDur = resolveMediaDurationSec(audio);
+    debugLog('sync_media_end_advance', debugLine({
+      reason: 'force_correction',
+      audio: Number(audio.currentTime.toFixed(3)),
+      mediaDur: Number(mediaDur.toFixed(3)),
+      serverPos: Number(getPlaybackTime(state).toFixed(3)),
+      ended: audio.ended,
+      trackId: options.song.queueId,
+      version: state?.version ?? null,
+    }));
+    return 'beyond_duration';
+  }
+
   const target = resolveTargetTime(audio, options);
   const trackId = state?.trackId || options.song.queueId;
   const isPlaying = state?.status === 'playing';
@@ -337,6 +388,25 @@ async function applyCorrectionSync(
     if (!audio.paused) audio.pause();
     explicitHardSeek(audio, target, trackId, 'correction_paused');
     return 'paused';
+  }
+
+  const mediaDur = resolveMediaDurationSec(audio);
+  const rawServerPos = getPlaybackTime(state);
+  // 服务端已超过文件时长时禁止再 hard-seek 到末尾（会维持 seeking/buffering 且不触发 ended）
+  if (
+    mediaDur > 0
+    && isPositionBeyondDuration(rawServerPos, mediaDur)
+    && isAudioNearMediaEnd(audio)
+  ) {
+    debugLog('sync_media_end_advance', debugLine({
+      reason: 'correction_past_media',
+      audio: Number(audio.currentTime.toFixed(3)),
+      mediaDur: Number(mediaDur.toFixed(3)),
+      serverPos: Number(rawServerPos.toFixed(3)),
+      trackId: options.song.queueId,
+      version: state?.version ?? null,
+    }));
+    return 'beyond_duration';
   }
 
   const diff = target - audio.currentTime;
@@ -362,6 +432,10 @@ async function applyCorrectionSync(
       audio: Number(audio.currentTime.toFixed(3)),
     }));
     if (result !== 'played') return result;
+  }
+
+  if (shouldAdvanceAfterLocalMediaEnd(audio, options.song, getClientPlaybackState())) {
+    return 'beyond_duration';
   }
 
   return 'played';
@@ -417,19 +491,23 @@ export async function applyFollowerSync(
   const mode = syncModeLabel(options);
   recordSyncDrift(audio, options, mode);
 
+  const earlyState = getClientPlaybackState();
+  if (shouldAdvanceAfterLocalMediaEnd(audio, options.song, earlyState)) {
+    const mediaDur = resolveMediaDurationSec(audio);
+    debugLog('sync_media_end_advance', debugLine({
+      reason: mode,
+      audio: Number(audio.currentTime.toFixed(3)),
+      mediaDur: mediaDur > 0 ? Number(mediaDur.toFixed(3)) : null,
+      serverPos: earlyState ? Number(getPlaybackTime(earlyState).toFixed(3)) : null,
+      ended: audio.ended,
+      trackId: options.song.queueId,
+      version: earlyState?.version ?? null,
+    }));
+    return 'beyond_duration';
+  }
+
   if (isEndedWhileServerPlaying(audio, options.song)) {
-    const state = getClientPlaybackState();
-    const durationSec = resolveSyncDurationSec(audio, options.song, state);
-    if (isAudioAtLocalTrackEnd(audio, durationSec)) {
-      debugLog('sync_skip', debugLine({
-        reason: 'ended_at_local_end_wait_advance',
-        trackId: options.song.queueId,
-        version: state?.version ?? null,
-        audio: Number(audio.currentTime.toFixed(3)),
-        durationSec: durationSec > 0 ? Number(durationSec.toFixed(3)) : null,
-      }));
-      return 'idle';
-    }
+    // 误触发的 mid-track ended：尝试恢复；真正曲末已在上方 beyond_duration 处理
     return recoverFromEndedAudio(audio, options, mode);
   }
 

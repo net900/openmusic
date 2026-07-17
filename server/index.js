@@ -2508,7 +2508,7 @@ io.on('connection', (socket) => {
     callback?.({ success: true, songs: result.songs });
   });
 
-  socket.on('report_track_duration', ({ queueId, durationMs }, callback) => {
+  socket.on('report_track_duration', async ({ queueId, durationMs }, callback) => {
     const roomId = socketToRoom.get(socket.id);
     if (!roomId) {
       callback?.({ success: false, error: '未加入房间' });
@@ -2527,6 +2527,11 @@ io.on('connection', (socket) => {
       return;
     }
     callback?.({ success: true, skipped: Boolean(result.skipped) });
+
+    // 补种/缩短时长后，若时钟已越过真实尽头则立刻切歌（不必等 500ms 轮询）
+    if (!result.skipped) {
+      await advanceEndedRoomNow(roomId, queueId || '');
+    }
   });
 
 
