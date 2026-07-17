@@ -1539,15 +1539,12 @@ io.on('connection', (socket) => {
       chatHasMore: Boolean(chatHistory.hasMore),
       playbackState,
       socketId: userId,
+      connectionId: socket.id,
       nickname: joinUser?.nickname
         || roomPayload.users?.find((user) => user.id === userId)?.nickname
         || String(nickname || '').trim(),
-      isOwner: roomPayload.creatorId === userId,
-      isAdmin: (roomPayload.adminIds || []).includes(userId),
-      canControlPlayback: roomPayload.creatorId === userId
-        || (roomPayload.adminIds || []).includes(userId)
-        || (roomPayload.autoPromotedAdminIds || []).includes(userId),
-      isPlaybackLeader: roomPayload.ownerId === userId,
+      // 不在 ACK 中下发 isOwner/isAdmin/canControl 等特权布尔值：
+      // 角色仅由服务端鉴权 + 客户端用 room.creatorId/adminIds 与自身 socketId 比对展示 UI
     });
 
     setImmediate(() => {
@@ -2006,7 +2003,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const result = removeFromQueue(roomId, getSocketUserId(socket), queueId);
+    const result = removeFromQueue(roomId, getSocketUserId(socket), queueId, socket.id);
     if (result.error) {
       callback?.({ success: false, error: result.error });
       return;
@@ -2027,7 +2024,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const result = clearQueue(roomId, getSocketUserId(socket));
+    const result = clearQueue(roomId, getSocketUserId(socket), socket.id);
     if (result.error) {
       callback?.({ success: false, error: result.error });
       return;
@@ -2096,7 +2093,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const result = await requestJump(roomId, getSocketUserId(socket), queueId);
+    const result = await requestJump(roomId, getSocketUserId(socket), queueId, socket.id);
     if (result.error) {
       callback?.({ success: false, error: result.error });
       return;
@@ -2117,7 +2114,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const result = reorderQueue(roomId, getSocketUserId(socket), orderedQueueIds, movedQueueId);
+    const result = reorderQueue(roomId, getSocketUserId(socket), orderedQueueIds, movedQueueId, socket.id);
     if (result.error) {
       callback?.({ success: false, error: result.error });
       return;

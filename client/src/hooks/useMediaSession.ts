@@ -12,6 +12,10 @@ import {
   updateMediaSessionPlaybackState,
   updateMediaSessionPositionState,
 } from '../lib/mediaSession';
+import {
+  installBackgroundPlaybackGuards,
+  isLikelySystemMediaSuspend,
+} from '../lib/backgroundPlayback';
 
 const SEEK_STEP_SEC = 10;
 const POSITION_UPDATE_MS = 1000;
@@ -47,6 +51,8 @@ export function useMediaSession({
       return;
     }
 
+    installBackgroundPlaybackGuards();
+
     const syncHandlers = () => {
       const state = useRoomStore.getState();
       const canControl = state.canControlPlayback;
@@ -79,6 +85,14 @@ export function useMediaSession({
               const { room, canControlPlayback } = useRoomStore.getState();
               if (!room?.current) return;
               const { localPlayback } = useAudioStore.getState();
+
+              // 息屏瞬间系统常会误发 pause；短窗口内忽略，避免整房被停
+              if (isLikelySystemMediaSuspend() && room.isPlaying) {
+                updateMediaSessionPlaybackState('playing');
+                localPlayback?.(true);
+                return;
+              }
+
               if (canControlPlayback) {
                 updateMediaSessionPlaybackState('paused');
                 localPlayback?.(false);
@@ -126,6 +140,11 @@ export function useMediaSession({
           : undefined,
         stop: hasTrack && canControl && playBound
           ? () => {
+              if (isLikelySystemMediaSuspend() && useRoomStore.getState().room?.isPlaying) {
+                updateMediaSessionPlaybackState('playing');
+                useAudioStore.getState().localPlayback?.(true);
+                return;
+              }
               useAudioStore.getState().localPlayback?.(false);
               void controlsRef.current.togglePlay(false);
             }

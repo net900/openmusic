@@ -625,11 +625,11 @@ function canModerate(room, userId) {
   return isAppointedAdmin(room, userId);
 }
 
-/** 操作者必须在线且 connectionId 属于本人，防止串连接提权 */
+/** 操作者必须在线且 connectionId 属于本人，防止串连接提权（connectionId 必填） */
 function isActorConnection(room, userId, connectionId = null) {
   const user = room.users.get(userId);
   if (!isEligibleOwner(user)) return false;
-  if (connectionId == null || connectionId === '') return true;
+  if (connectionId == null || connectionId === '') return false;
   const ids = user.connectionIds;
   return Boolean((ids && ids.has(connectionId)) || user.connectionId === connectionId);
 }
@@ -1852,15 +1852,8 @@ export function canUserMutate(roomId, userId) {
 
 function isCreatorConnection(room, userId, connectionId = null) {
   if (!isRoomCreator(room, userId)) return false;
-  const user = room.users.get(userId);
-  if (!isEligibleOwner(user)) return false;
-  // 若带了 connectionId，必须是该创建者当前在线连接之一，防止伪造会话升权
-  if (connectionId) {
-    const ids = user.connectionIds;
-    const ok = (ids && ids.has(connectionId)) || user.connectionId === connectionId;
-    if (!ok) return false;
-  }
-  return true;
+  // connectionId 必填：禁止仅凭 userId / 响应里的 creatorId 冒充房主操作
+  return isActorConnection(room, userId, connectionId);
 }
 
 function isOwnerConnection(room, userId, connectionId = null) {
@@ -2080,7 +2073,7 @@ export async function toggleCurrentDislike(roomId, userId) {
   };
 }
 
-export function removeFromQueue(roomId, socketId, queueId) {
+export function removeFromQueue(roomId, socketId, queueId, connectionId = null) {
   const room = rooms.get(roomId);
   if (!room) return { error: '房间不存在' };
 
@@ -2088,7 +2081,10 @@ export function removeFromQueue(roomId, socketId, queueId) {
   if (!item) return { error: '歌曲不在队列中' };
 
   const user = room.users.get(socketId);
-  const canManage = canControlPlayback(room, socketId);
+  if (!isActorConnection(room, socketId, connectionId)) {
+    return { error: '会话无效，请刷新后重试' };
+  }
+  const canManage = isControllerConnection(room, socketId, connectionId);
   const isRequester = isQueueRequester(item, socketId, user);
   if (!canManage && !isRequester) {
     return { error: '只能删除自己点的歌' };
@@ -2108,11 +2104,11 @@ export function removeFromQueue(roomId, socketId, queueId) {
   return { room: serializeRoom(room), systemMessage };
 }
 
-export function clearQueue(roomId, userId) {
+export function clearQueue(roomId, userId, connectionId = null) {
   const room = rooms.get(roomId);
   if (!room) return { error: '房间不存在' };
 
-  if (!canControlPlayback(room, userId)) {
+  if (!isControllerConnection(room, userId, connectionId)) {
     return { error: '仅房主或管理员可清空队列' };
   }
 
@@ -2516,16 +2512,19 @@ async function applyJumpToFront(room, queueId, options = {}) {
   return true;
 }
 
-export async function requestJump(roomId, socketId, queueId) {
+export async function requestJump(roomId, socketId, queueId, connectionId = null) {
   const room = rooms.get(roomId);
   if (!room) return { error: '房间不存在' };
 
   const user = room.users.get(socketId);
   if (!user) return { error: '未加入房间' };
+  if (!isActorConnection(room, socketId, connectionId)) {
+    return { error: '会话无效，请刷新后重试' };
+  }
 
   const item = room.queue.find((s) => s.queueId === queueId);
   if (!item) return { error: '歌曲不在队列中' };
-  const isController = isControllerConnection(room, socketId);
+  const isController = isControllerConnection(room, socketId, connectionId);
   const isRequester = isQueueRequester(item, socketId, user);
   if (!isController && !isRequester) return { error: '只能为自己点的歌插队' };
   if (!isController && !room.memberJumpEnabled) {
@@ -2552,10 +2551,12 @@ export async function requestJump(roomId, socketId, queueId) {
  * 仅被拖动的歌曲写入 ownerPriority（边框与插队一致），不改动点歌人。
  * 全队写入 manualOrder 以锁定顺序。
  */
-export function reorderQueue(roomId, actorId, orderedQueueIds, movedQueueId = null) {
+export function reorderQueue(roomId, actorId, orderedQueueIds, movedQueueId = null, connectionId = null) {
   const room = rooms.get(roomId);
   if (!room) return { error: '房间不存在' };
-  if (!isControllerConnection(room, actorId)) return { error: '仅房主或管理员可排序播放列表' };
+  if (!isControllerConnection(room, actorId, connectionId)) {
+    return { error: '仅房主或管理员可排序播放列表' };
+  }
 
   if (!Array.isArray(orderedQueueIds) || orderedQueueIds.length === 0) {
     return { error: '排序参数无效' };

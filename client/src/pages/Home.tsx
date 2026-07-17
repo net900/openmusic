@@ -360,7 +360,7 @@ export default function Home() {
               <Github className="w-4 h-4" />
             </a>
           </div>
-          <div className="max-w-6xl mx-auto px-4 sm:px-6 pr-14 sm:pr-72 h-full flex items-center gap-3 sm:gap-4">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 pr-24 sm:pr-72 h-full flex items-center gap-3 sm:gap-4">
           <div className="flex items-center gap-2.5 flex-shrink-0">
             <div className="w-9 h-9 rounded-xl bg-netease-red/15 flex items-center justify-center">
               <Music className="w-5 h-5 text-netease-red" />
@@ -399,11 +399,18 @@ export default function Home() {
             <button
               type="button"
               onClick={() => { setError(''); setShowCreate(true); }}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-netease-red hover:bg-red-500 text-white transition-all hover:shadow-lg hover:shadow-netease-red/20"
+              className="hidden sm:flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-netease-red hover:bg-red-500 text-white transition-all hover:shadow-lg hover:shadow-netease-red/20"
             >
               <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">创建房间</span>
-              <span className="sm:hidden">创建</span>
+              <span>创建房间</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setError(''); setShowCreate(true); }}
+              className="sm:hidden p-2.5 rounded-xl bg-netease-red hover:bg-red-500 text-white transition-all"
+              aria-label="创建房间"
+            >
+              <Plus className="w-4 h-4" />
             </button>
           </div>
         </div>

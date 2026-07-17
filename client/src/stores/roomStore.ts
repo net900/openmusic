@@ -6,7 +6,7 @@ interface RoomStore {
   nickname: string;
   mySocketId: string | null;
   myConnectionId: string | null;
-  /** 初创房主身份（creatorId） */
+  /** 初创房主身份（creatorId）——仅由 syncRolesFromRoom 根据房间快照计算，不信任 ACK 布尔值 */
   isOwner: boolean;
   isAdmin: boolean;
   /** 可操控播放（房主或管理员） */
@@ -18,19 +18,31 @@ interface RoomStore {
   isReconnecting: boolean;
   setRoom: (room: RoomState | null) => void;
   setNickname: (name: string) => void;
+  /** 仅设置身份 ID；特权角色必须经 syncRolesFromRoom 从房间字段推导 */
   setConnectionInfo: (
     socketId: string | null,
-    isOwner: boolean,
     connectionId?: string | null,
-    isAdmin?: boolean,
-    isPlaybackLeader?: boolean,
-    canControlPlayback?: boolean,
   ) => void;
   syncRolesFromRoom: (room: RoomState) => void;
   setShowPlayer: (show: boolean) => void;
   setExitReason: (reason: string | null) => void;
   setReconnecting: (reconnecting: boolean) => void;
   resetSession: () => void;
+}
+
+function deriveRoles(room: RoomState, mySocketId: string) {
+  const nextIsOwner = room.creatorId === mySocketId;
+  const nextIsAdmin = (room.adminIds || []).includes(mySocketId);
+  const nextCanControl = nextIsOwner
+    || nextIsAdmin
+    || (room.autoPromotedAdminIds || []).includes(mySocketId);
+  const nextIsLeader = room.ownerId === mySocketId;
+  return {
+    isOwner: nextIsOwner,
+    isAdmin: nextIsAdmin,
+    canControlPlayback: nextCanControl,
+    isPlaybackLeader: nextIsLeader,
+  };
 }
 
 export const useRoomStore = create<RoomStore>((set, get) => ({
@@ -50,43 +62,50 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
     localStorage.setItem('sjb_nickname', nickname);
     set({ nickname });
   },
-  setConnectionInfo: (
-    mySocketId,
-    isOwner,
-    myConnectionId = null,
-    isAdmin = false,
-    isPlaybackLeader = false,
-    canControlPlayback,
-  ) => set({
-    mySocketId,
-    myConnectionId,
-    isOwner,
-    isAdmin,
-    canControlPlayback: canControlPlayback ?? (isOwner || isAdmin),
-    isPlaybackLeader,
-  }),
+  setConnectionInfo: (mySocketId, myConnectionId = null) => {
+    if (!mySocketId || !myConnectionId) {
+      set({
+        mySocketId: mySocketId || null,
+        myConnectionId: null,
+        isOwner: false,
+        isAdmin: false,
+        canControlPlayback: false,
+        isPlaybackLeader: false,
+      });
+      return;
+    }
+    const room = get().room;
+    if (room) {
+      set({
+        mySocketId,
+        myConnectionId,
+        ...deriveRoles(room, mySocketId),
+      });
+      return;
+    }
+    set({
+      mySocketId,
+      myConnectionId,
+      isOwner: false,
+      isAdmin: false,
+      canControlPlayback: false,
+      isPlaybackLeader: false,
+    });
+  },
   syncRolesFromRoom: (room) => {
     const { mySocketId, myConnectionId, isOwner, isAdmin, canControlPlayback, isPlaybackLeader } = get();
     if (!mySocketId) return;
-    const nextIsOwner = room.creatorId === mySocketId;
-    const nextIsAdmin = (room.adminIds || []).includes(mySocketId);
-    const nextCanControl = nextIsOwner
-      || nextIsAdmin
-      || (room.autoPromotedAdminIds || []).includes(mySocketId);
-    const nextIsLeader = room.ownerId === mySocketId;
+    const next = deriveRoles(room, mySocketId);
     if (
-      nextIsOwner === isOwner
-      && nextIsAdmin === isAdmin
-      && nextCanControl === canControlPlayback
-      && nextIsLeader === isPlaybackLeader
+      next.isOwner === isOwner
+      && next.isAdmin === isAdmin
+      && next.canControlPlayback === canControlPlayback
+      && next.isPlaybackLeader === isPlaybackLeader
     ) {
       return;
     }
     set({
-      isOwner: nextIsOwner,
-      isAdmin: nextIsAdmin,
-      canControlPlayback: nextCanControl,
-      isPlaybackLeader: nextIsLeader,
+      ...next,
       myConnectionId,
     });
   },

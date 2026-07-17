@@ -172,15 +172,17 @@ type JoinAckResponse = {
   clientId?: string;
   clientToken?: string;
   needsSession?: boolean;
-  isOwner?: boolean;
-  isAdmin?: boolean;
-  canControlPlayback?: boolean;
-  isPlaybackLeader?: boolean;
   nickname?: string;
 };
 
 function applyJoinResponse(session: JoinSession, res: JoinAckResponse) {
   if (!res.success || !res.room) return;
+
+  // 先写入身份，再应用房间快照（角色只从 room 字段推导，不读 ACK 特权布尔）
+  if (res.socketId) {
+    const connectionId = res.connectionId || getSocket().id || null;
+    useRoomStore.getState().setConnectionInfo(res.socketId, connectionId);
+  }
 
   applyRoomSnapshot(res.room, true);
   applyJoinSnapshot(res.room, res.playbackState);
@@ -204,19 +206,6 @@ function applyJoinResponse(session: JoinSession, res: JoinAckResponse) {
     lastJoinSession = { ...session, nickname: resolvedNickname };
   }
 
-  if (res.socketId) {
-    const canControl = typeof res.canControlPlayback === 'boolean'
-      ? res.canControlPlayback
-      : undefined;
-    useRoomStore.getState().setConnectionInfo(
-      res.socketId,
-      Boolean(res.isOwner),
-      res.connectionId || null,
-      Boolean(res.isAdmin),
-      Boolean(res.isPlaybackLeader),
-      canControl,
-    );
-  }
   if (res.room.current || res.room.nextRandom || (res.room.queue?.length ?? 0) > 0) {
     prefetchUpcomingFromRoom(res.room);
   }
@@ -405,7 +394,7 @@ async function attemptRoomRejoin(trigger: string) {
 function handleSocketDisconnect(reason: string) {
   debugLog('socket_disconnect', debugLine({ reason }));
   const { mySocketId } = useRoomStore.getState();
-  useRoomStore.getState().setConnectionInfo(mySocketId, false, null);
+  useRoomStore.getState().setConnectionInfo(mySocketId, null);
 
   if (!shouldMaintainRoomSession()) return;
 
@@ -585,7 +574,7 @@ let prefetchDebounceTimer = 0;
     s.on('connect_error', (err) => {
       debugLog('socket_connect_error', debugLine({ message: err?.message }));
       const { mySocketId } = useRoomStore.getState();
-      useRoomStore.getState().setConnectionInfo(mySocketId, false, null);
+      useRoomStore.getState().setConnectionInfo(mySocketId, null);
       if (shouldMaintainRoomSession()) {
         scheduleRoomRejoin('connect_error');
       }

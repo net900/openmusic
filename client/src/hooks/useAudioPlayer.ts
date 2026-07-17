@@ -31,6 +31,10 @@ import {
   type PlayResult,
 } from '../lib/audioUnlock';
 import { sharedAudioGeneration } from '../lib/audioElement';
+import {
+  installBackgroundPlaybackGuards,
+  isLikelySystemMediaSuspend,
+} from '../lib/backgroundPlayback';
 import { ensureGalaxyAudioOutput } from '../components/galaxy/lib/galaxyAudio';
 import {
   prefetchUpcomingFromRoom,
@@ -380,6 +384,18 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
       audio.addEventListener('ended', () => {
         const runtime = activeAudioRuntime;
         if (!runtime) return;
+        // 息屏时部分 WebView 会误触发 ended（未真正播完），不可据此切歌/停房
+        if (document.hidden || isLikelySystemMediaSuspend()) {
+          const dur = audio.duration;
+          const nearEnd = Number.isFinite(dur) && dur > 0 && audio.currentTime >= dur - 1.5;
+          if (!nearEnd) {
+            const live = useRoomStore.getState();
+            if (live.room?.isPlaying && live.room.current) {
+              void audio.play().catch(() => {});
+            }
+            return;
+          }
+        }
         const live = useRoomStore.getState();
         const current = live.room?.current;
         if (!current) return;
@@ -399,6 +415,15 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
         if (useRoomStore.getState().isPlaybackLeader) {
           runtime.finishSong(current.queueId);
         }
+      });
+
+      audio.addEventListener('pause', () => {
+        // 仅对抗息屏瞬间的系统挂起；锁屏控件主动暂停不在此窗口内
+        if (!isLikelySystemMediaSuspend()) return;
+        const live = useRoomStore.getState();
+        if (!live.room?.isPlaying || !live.room.current) return;
+        if (!isAudioBoundToQueue(audio, live.room.current.queueId)) return;
+        void audio.play().catch(() => {});
       });
 
       audio.addEventListener('error', () => {
@@ -876,6 +901,7 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
 
   // visibilitychange：切走时不做任何事；切回时仅软恢复（浏览器暂停了才 play）
   useEffect(() => {
+    installBackgroundPlaybackGuards();
     const onVisibilityChange = () => {
       if (document.hidden) return;
       if (isSongPreviewSuppressingRoom()) return;
