@@ -128,7 +128,8 @@ pm2 startup   # 按提示设置开机自启
 | 问题 | 处理 |
 |------|------|
 | 页面能开但无法加入房间 | 检查 Nginx 是否配置 `socket.io` WebSocket |
-| 蓝点（酷狗）播放卡顿 | 按示例为 `/api/media-proxy` 加 `proxy_buffering off`；勿把酷狗链升成 https |
+| 蓝点（酷狗）播放卡顿 | ① `/api/media-proxy` 加 `proxy_buffering off`（示例已写）② EdgeOne 对 `/api/*` 动态回源、不缓存 ③ 部署含 `mediaProxy.js` 流式 `no-store` 头的服务端版本 ④ 勿把酷狗链升 https |
+| `ERR_HTTP2_PROTOCOL_ERROR` + 206 | ① 更新 `mediaProxy.js`（流式不写 `Content-Length`）② Nginx 加 `proxy_set_header Connection ""`、`gzip off`、`proxy_force_ranges on` ③ EdgeOne 对 `/api/media-proxy` 动态回源、不缓存 206 |
 | 搜不到歌 / 无法播放 | 检查 `METING_API_URL`、`CYAPI_KEY` |
 | 502 | PM2 是否运行：`pm2 list` |
 | 端口冲突 | 修改 `.env` 的 `PORT` 和 Nginx 反代端口 |

@@ -704,9 +704,6 @@ app.get('/api/music/sources', (_req, res) => {
 
 app.get('/api/meting', async (req, res) => {
   if (!requireSessionIdentity(req, res)) return;
-  if (!limitProxyRequest(proxyLimitKey('meting', req))) {
-    return res.status(429).json({ error: '请求过于频繁，请稍后再试' });
-  }
 
   try {
     const thumbPx = parseInt(String(req.query.size || ''), 10) || 0;
@@ -748,9 +745,7 @@ app.get('/api/media-proxy', async (req, res) => {
   if (isBlockedMediaHostname(parsed.hostname) && !isMetingApiHostname(parsed.hostname)) {
     return res.status(403).json({ error: '禁止访问内网地址' });
   }
-  if (!hostAllowed) {
-    return res.status(403).json({ error: '不允许的媒体域名' });
-  }
+  // 不再限制媒体域名白名单，仅拦截内网地址
 
   try {
     if (parseMetingMediaQuery(raw)) {
@@ -768,8 +763,8 @@ app.get('/api/media-proxy', async (req, res) => {
     } catch {
       return res.status(400).json({ error: '无效地址' });
     }
-    if (isBlockedMediaHostname(finalHost) || !isAllowedMediaHostname(finalHost)) {
-      return res.status(403).json({ error: '不允许的媒体域名' });
+    if (isBlockedMediaHostname(finalHost)) {
+      return res.status(403).json({ error: '禁止访问内网地址' });
     }
 
     await serveUpstreamMedia(fetchUrl, res, fetchWithTimeout, {

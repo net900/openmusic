@@ -141,6 +141,16 @@ function isAudioStream(contentType, range) {
   return Boolean(contentType && /^(audio|video|application\/octet-stream)\b/i.test(contentType));
 }
 
+/** 流式响应只透传 Range 相关头；不写 Content-Length，避免 HTTP/2 字节数承诺与实际 DATA 帧不一致 */
+function applyStreamingMediaHeaders(response, res, contentType) {
+  if (contentType) res.set('Content-Type', contentType);
+  for (const header of ['accept-ranges', 'content-range']) {
+    const value = response.headers.get(header);
+    if (value) res.set(header, value);
+  }
+  res.status(response.status);
+}
+
 function assertSafeMediaUrl(rawUrl, extraAllowedHosts, { requireAllowlist }) {
   let parsed;
   try {
@@ -160,11 +170,7 @@ function assertSafeMediaUrl(rawUrl, extraAllowedHosts, { requireAllowlist }) {
     err.statusCode = 403;
     throw err;
   }
-  if (requireAllowlist && !isAllowedMediaHostname(parsed.hostname, extraAllowedHosts)) {
-    const err = new Error('不允许的媒体域名');
-    err.statusCode = 403;
-    throw err;
-  }
+  // 不再限制媒体域名白名单，仅拦截内网地址
   return parsed;
 }
 
@@ -193,6 +199,11 @@ export async function fetchMediaWithSafeRedirects(fetchWithTimeout, rawUrl, fetc
         const err = new Error('上游返回空重定向');
         err.statusCode = 502;
         throw err;
+      }
+      try {
+        await response.body?.cancel?.();
+      } catch {
+        // 忽略 drain 失败，继续跟随 Location
       }
       try {
         currentUrl = preferHttpsMediaUrl(new URL(location, currentUrl).toString());
@@ -260,7 +271,16 @@ export async function serveUpstreamMedia(rawUrl, res, fetchWithTimeout, options 
   const contentType = normalizeAudioContentType(rawType);
   const useBuffer = shouldBufferResponse(rawType, options) && !isAudioStream(rawType, range);
 
-  res.set('Cache-Control', 'public, max-age=3600');
+  // 流式音频禁止 CDN/Nginx 缓冲或分段缓存（酷狗等 HTTP 代理链路易因此卡顿）
+  if (useBuffer) {
+    res.set('Cache-Control', 'public, max-age=3600');
+  } else {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private, max-age=0');
+    res.set('Pragma', 'no-cache');
+    res.set('X-Accel-Buffering', 'no');
+    res.set('CDN-Cache-Control', 'no-store');
+    res.set('Surrogate-Control', 'no-store');
+  }
   res.set('X-OpenMusic-Proxy', '1');
 
   if (useBuffer) {
@@ -285,16 +305,12 @@ export async function serveUpstreamMedia(rawUrl, res, fetchWithTimeout, options 
     }
   }
 
-  if (contentType) res.set('Content-Type', contentType);
-  for (const header of ['accept-ranges', 'content-length', 'content-range']) {
-    const value = response.headers.get(header);
-    if (value) res.set(header, value);
-  }
-
   if (!response.body) {
     try {
       const buffer = Buffer.from(await response.arrayBuffer());
-      res.status(response.status).send(buffer);
+      applyStreamingMediaHeaders(response, res, contentType);
+      res.set('Content-Length', String(buffer.length));
+      res.send(buffer);
       return true;
     } catch {
       if (!res.headersSent) res.status(502).json({ error: '媒体代理失败' });
@@ -309,14 +325,14 @@ export async function serveUpstreamMedia(rawUrl, res, fetchWithTimeout, options 
     stream.destroy();
   });
 
-  res.status(response.status);
+  applyStreamingMediaHeaders(response, res, contentType);
+  if (!res.headersSent) res.flushHeaders?.();
   try {
     await pipeline(stream, res);
     return true;
   } catch {
     if (clientGone) return false;
     if (!res.headersSent) res.status(502).end();
-    else res.destroy();
     return false;
   }
 }

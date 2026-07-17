@@ -133,10 +133,11 @@ server {
         proxy_send_timeout 86400;
     }
 
-    # 必须写在 /api 前面
+    # 必须写在 /api 前面；酷狗 HTTP 音链经此流式转发，禁止缓冲
     location ^~ /api/media-proxy {
         proxy_pass http://127.0.0.1:4000;
         proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -147,8 +148,11 @@ server {
         proxy_buffering off;
         proxy_request_buffering off;
         proxy_max_temp_file_size 0;
+        proxy_force_ranges on;
+        gzip off;
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;
+        # 若 EdgeOne 在 Nginx 前：控制台须将 /api/* 设为动态回源、不缓存
     }
 
     location ^~ /api/ {

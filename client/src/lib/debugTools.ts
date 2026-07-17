@@ -2,7 +2,7 @@ import { useAudioStore } from '../stores/audioStore';
 import { useRoomStore } from '../stores/roomStore';
 import { useChatStore } from '../stores/chatStore';
 import { getSharedAudio } from './audioElement';
-import { getAudioBoundQueueId } from './audioTrackBinding';
+import { canSyncAudioForQueue, getAudioBoundQueueId } from './audioTrackBinding';
 import { getClientId } from './clientId';
 import {
   getClientPlaybackState,
@@ -10,6 +10,14 @@ import {
   getPlaybackTime,
 } from './playbackState';
 import { formatDriftHistogram, resetDriftHistogram } from './driftHistogram';
+import { isAudioBuffering } from './audioBuffering';
+import {
+  isInsecureRemoteMediaUrl,
+  isProxiedMediaUrl,
+  unwrapProxiedMediaUrl,
+} from './mediaProxyUrl';
+import { isTrackSourceError } from './songPreloadCache';
+import type { QueueItem } from '../types';
 
 const DEBUG_FLAG_KEY = 'openmusic:debug';
 const DEBUG_INTERVAL_MS = 2000;
@@ -72,6 +80,114 @@ function shortSrc(src: string): string {
   }
 }
 
+function readyStateLabel(state: number): string {
+  switch (state) {
+    case HTMLMediaElement.HAVE_NOTHING: return 'HAVE_NOTHING';
+    case HTMLMediaElement.HAVE_METADATA: return 'HAVE_METADATA';
+    case HTMLMediaElement.HAVE_CURRENT_DATA: return 'HAVE_CURRENT_DATA';
+    case HTMLMediaElement.HAVE_FUTURE_DATA: return 'HAVE_FUTURE_DATA';
+    case HTMLMediaElement.HAVE_ENOUGH_DATA: return 'HAVE_ENOUGH_DATA';
+    default: return `unknown(${state})`;
+  }
+}
+
+function networkStateLabel(state: number): string {
+  switch (state) {
+    case HTMLMediaElement.NETWORK_EMPTY: return 'NETWORK_EMPTY';
+    case HTMLMediaElement.NETWORK_IDLE: return 'NETWORK_IDLE';
+    case HTMLMediaElement.NETWORK_LOADING: return 'NETWORK_LOADING';
+    case HTMLMediaElement.NETWORK_NO_SOURCE: return 'NETWORK_NO_SOURCE';
+    default: return `unknown(${state})`;
+  }
+}
+
+function mediaErrorLabel(error: MediaError | null): string | null {
+  if (!error) return null;
+  switch (error.code) {
+    case MediaError.MEDIA_ERR_ABORTED: return 'MEDIA_ERR_ABORTED';
+    case MediaError.MEDIA_ERR_NETWORK: return 'MEDIA_ERR_NETWORK';
+    case MediaError.MEDIA_ERR_DECODE: return 'MEDIA_ERR_DECODE';
+    case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED: return 'MEDIA_ERR_SRC_NOT_SUPPORTED';
+    default: return `unknown(${error.code})`;
+  }
+}
+
+function upstreamHostOf(src: string): string | null {
+  if (!src) return null;
+  const raw = isProxiedMediaUrl(src) ? unwrapProxiedMediaUrl(src) : src;
+  try {
+    return new URL(raw).host;
+  } catch {
+    return null;
+  }
+}
+
+function formatBufferedAhead(audio: HTMLAudioElement): string {
+  const ranges = audio.buffered;
+  if (!ranges || ranges.length === 0) return '0';
+  let maxEnd = 0;
+  for (let i = 0; i < ranges.length; i += 1) {
+    maxEnd = Math.max(maxEnd, ranges.end(i));
+  }
+  const aheadSec = Math.max(0, maxEnd - audio.currentTime);
+  return `${fmtNum(aheadSec)}s/${ranges.length}rng`;
+}
+
+function formatAudioSnapshot(
+  audio: HTMLAudioElement,
+  audioStore: ReturnType<typeof useAudioStore.getState>,
+  current: Pick<QueueItem, 'queueId' | 'id' | 'source' | 'url'> | null | undefined,
+): string[] {
+  const src = audio.currentSrc || audio.src || '';
+  const boundQueueId = getAudioBoundQueueId(audio);
+  const lines: string[] = [];
+
+  lines.push(debugLine({
+    audioBound: boundQueueId || null,
+    audioBindMatch: current ? boundQueueId === current.queueId : null,
+    audioCanSync: current ? canSyncAudioForQueue(audio, current.queueId) : null,
+    audioTime: fmtNum(audio.currentTime),
+    audioDuration: fmtNum(audio.duration),
+    audioPaused: audio.paused,
+    audioEnded: audio.ended,
+    audioSeeking: audio.seeking,
+    audioReadyState: `${audio.readyState}:${readyStateLabel(audio.readyState)}`,
+    audioNetworkState: `${audio.networkState}:${networkStateLabel(audio.networkState)}`,
+    audioRate: fmtNum(audio.playbackRate),
+    audioMuted: audio.muted,
+    audioVolume: fmtNum(audioStore.volume),
+    audioBuffering: isAudioBuffering(audio),
+    audioBufferedAhead: formatBufferedAhead(audio),
+    trackLoading: audioStore.trackLoading,
+    needsUnlock: audioStore.needsAudioUnlock,
+    smoothTime: fmtNum(audioStore.smoothPlaybackTime),
+    playbackVersion: audioStore.playbackVersion,
+    trackReloadNonce: audioStore.trackReloadNonce,
+  }));
+
+  lines.push(debugLine({
+    audioSrc: shortSrc(src),
+    audioSrcProxied: src ? isProxiedMediaUrl(src) : null,
+    audioSrcInsecureUpstream: src ? isInsecureRemoteMediaUrl(
+      isProxiedMediaUrl(src) ? unwrapProxiedMediaUrl(src) : src,
+    ) : null,
+    audioUpstreamHost: upstreamHostOf(src),
+    audioCrossOrigin: audio.crossOrigin || 'default',
+    audioPreload: audio.preload,
+    audioError: mediaErrorLabel(audio.error),
+    trackSourceError: current ? isTrackSourceError(current) : null,
+    trackOriginalUrl: current?.url ? shortSrc(current.url) : null,
+    lrcDurationMs: audioStore.lrcDurationMs,
+    mediaDurationMs: audioStore.mediaDurationMs,
+  }));
+
+  if (src) {
+    lines.push(`audioSrcFull=${src}`);
+  }
+
+  return lines;
+}
+
 function formatSnapshotText(reason: string): string {
   const lines: string[] = [];
   const at = new Date().toISOString();
@@ -115,20 +231,7 @@ function formatSnapshotText(reason: string): string {
 
   const audio = getSharedAudio();
   const audioStore = useAudioStore.getState();
-  lines.push(debugLine({
-    audioBound: getAudioBoundQueueId(audio) || null,
-    audioTime: fmtNum(audio.currentTime),
-    audioDuration: fmtNum(audio.duration),
-    audioPaused: audio.paused,
-    audioEnded: audio.ended,
-    audioReadyState: audio.readyState,
-    audioRate: fmtNum(audio.playbackRate),
-    trackLoading: audioStore.trackLoading,
-    needsUnlock: audioStore.needsAudioUnlock,
-    smoothTime: fmtNum(audioStore.smoothPlaybackTime),
-    playbackVersion: audioStore.playbackVersion,
-    audioSrc: shortSrc(audio.currentSrc || audio.src),
-  }));
+  lines.push(...formatAudioSnapshot(audio, audioStore, room?.current));
 
   const pb = getClientPlaybackState();
   if (pb) {
