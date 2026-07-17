@@ -46,7 +46,7 @@ function ToplistRow({
       </span>
       <SongCover
         song={song}
-        size="tiny"
+        size="full"
         className="h-9 w-9 flex-shrink-0 rounded-md object-cover bg-netease-card"
       />
       <div className="min-w-0 flex-1 self-stretch flex flex-col justify-center gap-0.5">
@@ -101,7 +101,7 @@ function CompactToplistCard({
       className="group flex w-[4.25rem] flex-shrink-0 flex-col text-left disabled:opacity-50"
     >
       <div className="relative aspect-square overflow-hidden rounded-lg bg-netease-card">
-        <SongCover song={song} size="tiny" className="h-full w-full object-cover" />
+        <SongCover song={song} size="full" className="h-full w-full object-cover" />
         <span className={`absolute left-0.5 top-0.5 rounded px-1 text-[9px] font-bold leading-4 ${rankClass(rank)} bg-black/50`}>
           {rank}
         </span>

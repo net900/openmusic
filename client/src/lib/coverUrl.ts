@@ -9,20 +9,6 @@ export const COVER_SIZE_PX: Record<Exclude<CoverSize, 'full'>, number> = {
 const FALLBACK_COVER =
   'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect fill="%23333" width="48" height="48"/><text x="24" y="28" text-anchor="middle" fill="%23666" font-size="16">♪</text></svg>';
 
-function setUrlSearchParam(url: string, key: string, value: string): string {
-  try {
-    const parsed = new URL(url);
-    parsed.searchParams.set(key, value);
-    return parsed.toString();
-  } catch {
-    const [base, query = ''] = url.split('?');
-    const params = new URLSearchParams(query);
-    params.set(key, value);
-    const next = params.toString();
-    return next ? `${base}?${next}` : `${base}?${key}=${encodeURIComponent(value)}`;
-  }
-}
-
 function appendMetingThumbParam(url: string, px: number): string {
   const idx = url.indexOf('?');
   const params = new URLSearchParams(idx >= 0 ? url.slice(idx + 1) : '');
@@ -42,12 +28,19 @@ function resizeMediaProxyUrl(url: string, px: number): string {
   return `${url.slice(0, queryStart)}?${params.toString()}`;
 }
 
-function resizeNeteaseCover(url: string, px: number): string {
-  if (!/music\.126\.net|126\.net/i.test(url)) return url;
-  if (/param=\d+y\d+/i.test(url)) {
-    return url.replace(/param=\d+y\d+/gi, `param=${px}y${px}`);
+function stripNeteaseParam(url: string): string {
+  if (!/param=\d+y\d+/i.test(url)) return url;
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.delete('param');
+    return parsed.toString();
+  } catch {
+    return url
+      .replace(/([?&])param=\d+y\d+/gi, '$1')
+      .replace(/\?&/, '?')
+      .replace(/[?&]$/, '')
+      .replace(/\?$/, '');
   }
-  return setUrlSearchParam(url, 'param', `${px}y${px}`);
 }
 
 function resizeQqCover(url: string, px: number): string {
@@ -71,18 +64,18 @@ function resizeKugouCover(url: string, px: number): string {
 function resizeDirectCoverUrl(url: string, px: number): string {
   if (!url) return url;
 
-  let next = url;
-  next = resizeNeteaseCover(next, px);
-  if (next !== url) return next;
+  if (/music\.126\.net|126\.net/i.test(url)) {
+    return stripNeteaseParam(url);
+  }
 
-  next = resizeQqCover(url, px);
+  let next = resizeQqCover(url, px);
   if (next !== url) return next;
 
   next = resizeKugouCover(url, px);
   if (next !== url) return next;
 
   if (/param=\d+y\d+/i.test(url)) {
-    return url.replace(/param=\d+y\d+/gi, `param=${px}y${px}`);
+    return stripNeteaseParam(url);
   }
 
   if (/thumbnail=\d+/i.test(url)) {
@@ -93,19 +86,23 @@ function resizeDirectCoverUrl(url: string, px: number): string {
 }
 
 export function resizeCoverUrl(url: string, size: CoverSize = 'full'): string {
-  if (!url || size === 'full') return url;
+  if (!url) return url;
+
+  // 任意尺寸都先去掉 NetEase ?param=NyN，避免原图链自带缩略参数导致不显示
+  let next = /music\.126\.net|126\.net|param=\d+y\d+/i.test(url) ? stripNeteaseParam(url) : url;
+  if (size === 'full') return next;
 
   const px = COVER_SIZE_PX[size];
 
-  if (url.startsWith('/api/meting')) {
-    return appendMetingThumbParam(url, px);
+  if (next.startsWith('/api/meting')) {
+    return appendMetingThumbParam(next, px);
   }
 
-  if (url.includes('/api/media-proxy')) {
-    return resizeMediaProxyUrl(url, px);
+  if (next.includes('/api/media-proxy')) {
+    return resizeMediaProxyUrl(next, px);
   }
 
-  return resizeDirectCoverUrl(url, px);
+  return resizeDirectCoverUrl(next, px);
 }
 
 export function getFallbackCoverUrl(): string {

@@ -38,7 +38,8 @@ docker run -d --name meting -p 3000:3000 w3126197382/meting-api:latest
 | `CLIENT_URL` | 生产必填 | 允许的前端 Origin，多个用英文逗号分隔（必须 https） |
 | `CLIENT_ID_SECRET` | 生产必填 | 浏览器会话签名密钥，**重启后不要变化** |
 | `SESSION_TTL_SEC` | | 会话有效期（秒），默认 90 天；bootstrap 临近过期会静默续签 |
-| `TRUST_PROXY` | 生产推荐 | 设为 `1`：用 Nginx 的 `X-Real-IP` 做限流，勿信客户端伪造的 XFF |
+| `TRUST_PROXY` | 生产推荐 | 设为 `1`：信任反代/CDN 回源头做限流与定位 |
+| `CLIENT_IP_HEADER` | 有 CDN 时 | 自定义客户端 IP 头名，默认 `iqp`（优先于 `X-Real-IP`） |
 | `METING_API_URL` | 必填 | Meting-API 地址 |
 | `METING_API_AUTH` | 推荐 | Meting 的 `auth` 令牌 |
 | `CYAPI_KEY` | 可选 | 迟言 API Key（蓝点 + 随机推荐） |
@@ -147,7 +148,7 @@ location /socket.io/ {
 
 完整示例：[deploy/nginx.conf.example](../deploy/nginx.conf.example)
 
-> 限流、IP 归属地等功能依赖反代正确转发 `X-Forwarded-For` / `X-Real-IP`。
+> 限流、IP 归属地等功能依赖反代正确转发客户端 IP。若 CDN 使用自定义头（默认读 `iqp`），请确保 Nginx 原样回传该头；否则回退 `X-Real-IP` / `X-Forwarded-For`。
 
 ---
 

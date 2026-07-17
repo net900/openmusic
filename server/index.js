@@ -205,11 +205,27 @@ function normalizeClientIp(raw) {
   let ip = String(raw || '').replace(/^::ffff:/, '').trim();
   if (!ip) return '';
 
+  // 取逗号分隔链的首段（CDN 自定义头偶发带多值）
+  if (ip.includes(',')) {
+    ip = ip.split(',')[0].trim();
+  }
+
   const v4WithPort = ip.match(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/);
   if (v4WithPort) return v4WithPort[1];
 
   return ip;
 }
+
+function getHeaderIp(headers, name) {
+  const key = String(name || '').toLowerCase();
+  if (!key) return '';
+  const raw = headers[key];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return normalizeClientIp(value);
+}
+
+/** CDN 回源自定义客户端 IP 头，默认 iqp；可用 CLIENT_IP_HEADER 覆盖 */
+const CLIENT_IP_HEADER = String(process.env.CLIENT_IP_HEADER || 'iqp').trim().toLowerCase() || 'iqp';
 
 function getClientIpFromHeaders(headers = {}, remoteAddress = '') {
   // 未接反代时只用 socket 地址，避免客户端伪造 XFF 绕过限流
@@ -218,9 +234,13 @@ function getClientIpFromHeaders(headers = {}, remoteAddress = '') {
     return normalizeClientIp(remoteAddress || '');
   }
 
+  // CDN 自定义头（如 iqp）携带真实客户端 IP，优先于 Nginx 写入的边缘节点 X-Real-IP
+  const customIp = getHeaderIp(headers, CLIENT_IP_HEADER);
+  if (customIp) return customIp;
+
   // Nginx 覆盖写入的 X-Real-IP 优先于可被伪造的 XFF 首段
-  const realIp = Array.isArray(headers['x-real-ip']) ? headers['x-real-ip'][0] : headers['x-real-ip'];
-  if (realIp) return normalizeClientIp(realIp);
+  const realIp = getHeaderIp(headers, 'x-real-ip');
+  if (realIp) return realIp;
 
   const forwarded = headers['x-forwarded-for'];
   const rawForwarded = Array.isArray(forwarded) ? forwarded[0] : forwarded;
@@ -236,6 +256,8 @@ function getClientIpFromHeaders(headers = {}, remoteAddress = '') {
 function logIpDebug(scope, headers, remoteAddress, resolvedIp) {
   if (process.env.DEBUG_IP !== '1') return;
   console.log(`[ip-debug:${scope}]`, {
+    clientIpHeader: CLIENT_IP_HEADER,
+    customIp: headers?.[CLIENT_IP_HEADER],
     xff: headers?.['x-forwarded-for'],
     realIp: headers?.['x-real-ip'],
     remoteAddress,

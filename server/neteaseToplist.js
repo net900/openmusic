@@ -3,8 +3,9 @@ import { getRedisClient } from './roomStorage.js';
 const HOT_TOPLIST_ID = '3778678';
 const TOPLIST_URL = `https://music.163.com/discover/toplist?id=${HOT_TOPLIST_ID}`;
 const REDIS_CACHE_KEY = 'openmusic:netease:toplist:hot';
-/** 东八区日历日，热榜按「一天一清」 */
+/** 东八区对齐的 3 小时窗口，热榜按「三小时一清」 */
 const TZ_OFFSET_MS = 8 * 60 * 60 * 1000;
+const CACHE_TTL_MS = 3 * 60 * 60 * 1000;
 
 const NETEASE_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -12,21 +13,22 @@ const NETEASE_HEADERS = {
   Accept: 'text/html,application/xhtml+xml',
 };
 
-/** @type {{ day: string; data: { id: string; name: string; songs: object[] } } | null} */
+/** @type {{ bucket: string; data: { id: string; name: string; songs: object[] } } | null} */
 let memoryCache = null;
 /** @type {Promise<{ id: string; name: string; songs: object[] }> | null} */
 let inflight = null;
 
-function chinaDayKey(now = Date.now()) {
-  return new Date(now + TZ_OFFSET_MS).toISOString().slice(0, 10);
+/** 东八区时间轴上的 3 小时桶键 */
+function chinaBucketKey(now = Date.now()) {
+  const shifted = now + TZ_OFFSET_MS;
+  return String(Math.floor(shifted / CACHE_TTL_MS));
 }
 
-/** 距下一个东八区 0 点的秒数（至少 60s，避免边界抖动） */
-function secondsUntilNextChinaMidnight(now = Date.now()) {
-  const shifted = new Date(now + TZ_OFFSET_MS);
-  const nextMidnightUtcMs =
-    Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate() + 1) - TZ_OFFSET_MS;
-  return Math.max(60, Math.ceil((nextMidnightUtcMs - now) / 1000));
+/** 距下一个东八区 3 小时边界的秒数（至少 60s，避免边界抖动） */
+function secondsUntilNextChinaBucket(now = Date.now()) {
+  const shifted = now + TZ_OFFSET_MS;
+  const nextBoundary = (Math.floor(shifted / CACHE_TTL_MS) + 1) * CACHE_TTL_MS;
+  return Math.max(60, Math.ceil((nextBoundary - shifted) / 1000));
 }
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
@@ -39,6 +41,22 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
   }
 }
 
+function stripCoverParam(url) {
+  const raw = String(url || '').trim();
+  if (!raw || !/param=\d+y\d+/i.test(raw)) return raw || undefined;
+  try {
+    const parsed = new URL(raw);
+    parsed.searchParams.delete('param');
+    return parsed.toString();
+  } catch {
+    return raw
+      .replace(/([?&])param=\d+y\d+/gi, '$1')
+      .replace(/\?&/, '?')
+      .replace(/[?&]$/, '')
+      .replace(/\?$/, '') || undefined;
+  }
+}
+
 function normalizeNeteaseToplistSong(raw) {
   if (!raw || raw.id == null) return null;
   const artists = Array.isArray(raw.artists) ? raw.artists : [];
@@ -48,7 +66,8 @@ function normalizeNeteaseToplistSong(raw) {
     name: String(raw.name || '未知歌曲'),
     artist: artists.map((a) => a?.name).filter(Boolean).join(' / ') || '未知歌手',
     album: raw.album?.name || undefined,
-    pic: raw.album?.picUrl || undefined,
+    // 不带 ?param=NyN，避免热榜封面加载失败
+    pic: stripCoverParam(raw.album?.picUrl) || undefined,
     duration: typeof raw.duration === 'number' ? raw.duration : undefined,
   };
 }
@@ -108,7 +127,8 @@ function parseCachedPayload(raw) {
   try {
     const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
     if (!parsed || typeof parsed !== 'object') return null;
-    if (parsed.day !== chinaDayKey()) return null;
+    // 兼容旧「按日」缓存：无 bucket 或 bucket 不匹配则视为过期
+    if (parsed.bucket !== chinaBucketKey()) return null;
     if (!parsed.data || !Array.isArray(parsed.data.songs) || parsed.data.songs.length === 0) return null;
     return parsed;
   } catch {
@@ -128,11 +148,11 @@ async function readRedisCache() {
   }
 }
 
-async function writeRedisCache(day, data) {
+async function writeRedisCache(bucket, data) {
   const client = getRedisClient();
   if (!client) return;
-  const ttlSec = secondsUntilNextChinaMidnight();
-  const payload = JSON.stringify({ day, data, cachedAt: Date.now() });
+  const ttlSec = secondsUntilNextChinaBucket();
+  const payload = JSON.stringify({ bucket, data, cachedAt: Date.now() });
   try {
     await client.set(REDIS_CACHE_KEY, payload, { EX: ttlSec });
   } catch (err) {
@@ -156,9 +176,9 @@ async function fetchFreshToplist() {
 }
 
 async function loadToplistCached() {
-  const day = chinaDayKey();
+  const bucket = chinaBucketKey();
 
-  if (memoryCache?.day === day && memoryCache.data?.songs?.length) {
+  if (memoryCache?.bucket === bucket && memoryCache.data?.songs?.length) {
     return memoryCache.data;
   }
 
@@ -172,8 +192,8 @@ async function loadToplistCached() {
 
   inflight = (async () => {
     const data = await fetchFreshToplist();
-    memoryCache = { day, data };
-    await writeRedisCache(day, data);
+    memoryCache = { bucket, data };
+    await writeRedisCache(bucket, data);
     return data;
   })().finally(() => {
     inflight = null;

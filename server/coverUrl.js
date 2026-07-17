@@ -1,16 +1,28 @@
+/** 去掉 NetEase 风格 ?param=NyN（该参数会导致封面加载失败） */
+function stripNeteaseParam(url) {
+  if (!/param=\d+y\d+/i.test(url)) return url;
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.delete('param');
+    return parsed.toString();
+  } catch {
+    return url
+      .replace(/([?&])param=\d+y\d+/gi, '$1')
+      .replace(/\?&/, '?')
+      .replace(/[?&]$/, '')
+      .replace(/\?$/, '');
+  }
+}
+
 /** 将封面 CDN 地址转为指定边长的缩略图 URL（服务端 meting 重定向用） */
 export function resizeCoverForThumb(url, px) {
   if (!url || !px || px <= 0) return url;
 
   let next = url;
 
+  // NetEase：不再追加 ?param=NyN，大图直接用
   if (/music\.126\.net|126\.net/i.test(next)) {
-    if (/param=\d+y\d+/i.test(next)) {
-      next = next.replace(/param=\d+y\d+/gi, `param=${px}y${px}`);
-    } else {
-      next = appendSearchParam(next, 'param', `${px}y${px}`);
-    }
-    return next;
+    return stripNeteaseParam(next);
   }
 
   if (/\.gtimg\.com\/music\/photo_new\//i.test(next) || /y\.qq\.com\/music\/photo_new\//i.test(next)) {
@@ -27,7 +39,7 @@ export function resizeCoverForThumb(url, px) {
   }
 
   if (/param=\d+y\d+/i.test(next)) {
-    return next.replace(/param=\d+y\d+/gi, `param=${px}y${px}`);
+    return stripNeteaseParam(next);
   }
 
   if (/thumbnail=\d+/i.test(next)) {
@@ -35,18 +47,4 @@ export function resizeCoverForThumb(url, px) {
   }
 
   return next;
-}
-
-function appendSearchParam(url, key, value) {
-  try {
-    const parsed = new URL(url);
-    parsed.searchParams.set(key, value);
-    return parsed.toString();
-  } catch {
-    const [base, query = ''] = url.split('?');
-    const params = new URLSearchParams(query);
-    params.set(key, value);
-    const next = params.toString();
-    return next ? `${base}?${next}` : `${base}?${key}=${encodeURIComponent(value)}`;
-  }
 }
