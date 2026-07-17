@@ -65,6 +65,34 @@ import {
   isAudioBoundToQueue,
   shouldSkipTrackLoad,
 } from '../lib/audioTrackBinding';
+import { refreshSignedApiUrl } from '../lib/signedApiUrl';
+
+/** 播放出错/卡顿时换发新签名并续播，避免 om_ts 过期后 Range 请求 403 */
+async function reloadAudioWithFreshSign(audio: HTMLAudioElement): Promise<void> {
+  const prevSrc = audio.currentSrc || audio.src;
+  if (!prevSrc) {
+    audio.load();
+    await audio.play().catch(() => {});
+    return;
+  }
+  const fresh = (await refreshSignedApiUrl(prevSrc)) || prevSrc;
+  const resumeAt = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+  if (fresh !== prevSrc) {
+    audio.src = fresh;
+    try {
+      if (resumeAt > 0) audio.currentTime = resumeAt;
+    } catch {
+      // ignore seek failures before metadata
+    }
+  }
+  audio.load();
+  try {
+    if (resumeAt > 0) audio.currentTime = resumeAt;
+  } catch {
+    // ignore
+  }
+  await audio.play().catch(() => {});
+}
 
 let audioListenersAttached = false;
 let audioListenersTarget: HTMLAudioElement | null = null;
@@ -475,9 +503,7 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
             if (runtime.tempRetries.current < MAX_TEMP_PLAYBACK_RETRIES) {
               runtime.tempRetries.current += 1;
               controller.enqueue(async () => {
-                const a = controller.audio;
-                a.load();
-                await a.play().catch(() => {});
+                await reloadAudioWithFreshSign(controller.audio);
               });
               return;
             }
@@ -491,14 +517,15 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
           }
 
           runtime.lowestFallbackAttempted.current = true;
-          void fetchServiceFallbackUrl(song).then((fallbackUrl) => {
+          void fetchServiceFallbackUrl(song).then(async (fallbackUrl) => {
             if (fallbackUrl) {
               runtime.tempRetries.current = 0;
+              const freshFallback = (await refreshSignedApiUrl(fallbackUrl)) || fallbackUrl;
               controller.enqueue(async () => {
                 const a = controller.audio;
                 a.pause();
                 a.currentTime = 0;
-                a.src = fallbackUrl;
+                a.src = freshFallback;
                 bindAudioQueueId(a, song.queueId);
                 a.load();
                 await a.play().catch(() => {});
@@ -528,9 +555,7 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
 
           runtime.tempRetries.current += 1;
           controller.enqueue(async () => {
-            const a = controller.audio;
-            a.load();
-            await a.play().catch(() => {});
+            await reloadAudioWithFreshSign(controller.audio);
           });
         }, 2500);
       });
@@ -714,6 +739,7 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}) {
         let url: string;
         try {
           url = await resolveSongUrl(current);
+          url = (await refreshSignedApiUrl(url)) || url;
         } catch (err) {
           console.error('Failed to load song:', err);
           if (gen !== loadGeneration.current) return;

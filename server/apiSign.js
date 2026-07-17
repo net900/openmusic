@@ -1,7 +1,12 @@
 import { createHash, createHmac, timingSafeEqual } from 'crypto';
 
 const SIGN_WINDOW_SEC = Math.max(30, Number(process.env.API_SIGN_WINDOW_SEC) || 300);
-const NONCE_TTL_MS = SIGN_WINDOW_SEC * 1000;
+/** 媒体流（Range 续传）签名窗口：默认 20 分钟，避免播到一半因 om_ts 过期 403 切歌 */
+const MEDIA_SIGN_WINDOW_SEC = Math.max(
+  SIGN_WINDOW_SEC,
+  Number(process.env.API_MEDIA_SIGN_WINDOW_SEC) || 20 * 60,
+);
+const NONCE_TTL_MS = Math.max(SIGN_WINDOW_SEC, MEDIA_SIGN_WINDOW_SEC) * 1000;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const API_SIGN_REQUIRED = process.env.API_SIGN_REQUIRED !== undefined
   ? process.env.API_SIGN_REQUIRED !== '0' && process.env.API_SIGN_REQUIRED !== 'false'
@@ -10,6 +15,11 @@ const API_SIGN_REQUIRED = process.env.API_SIGN_REQUIRED !== undefined
 const SIGN_QUERY_KEYS = new Set(['om_ts', 'om_nonce', 'om_sign']);
 const MEDIA_PATHS = new Set(['/api/meting', '/api/media-proxy']);
 const API_ACCESS_DENIED = '请求无效，请刷新页面后重试';
+
+function getSignWindowSec(req) {
+  if (MEDIA_PATHS.has(req.path || '')) return MEDIA_SIGN_WINDOW_SEC;
+  return SIGN_WINDOW_SEC;
+}
 
 /** @type {Map<string, number>} */
 const usedNonces = new Map();
@@ -133,7 +143,7 @@ export function verifyApiSign(req, signKey, userId) {
   if (timestamp > now + 60) {
     return { ok: false, error: API_ACCESS_DENIED };
   }
-  if (now - timestamp > SIGN_WINDOW_SEC) {
+  if (now - timestamp > getSignWindowSec(req)) {
     return { ok: false, error: API_ACCESS_DENIED };
   }
 

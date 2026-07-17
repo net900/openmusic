@@ -5,8 +5,18 @@ const DEFAULT_TIMEOUT_MS = 10000;
 
 function resolveRequestUrl(input: RequestInfo | URL): string {
   if (typeof input === 'string') return input;
-  if (input instanceof URL) return `${input.pathname}${input.search}`;
+  if (input instanceof URL) return input.href;
   return input.url;
+}
+
+function isSameOriginApiUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    if (!parsed.pathname.startsWith('/api/')) return false;
+    return parsed.origin === window.location.origin;
+  } catch {
+    return false;
+  }
 }
 
 function mergeHeaders(
@@ -30,12 +40,15 @@ export async function fetchWithTimeout(
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
 
   const url = resolveRequestUrl(input);
-  const initWithCreds: RequestInit = {
-    credentials: 'include',
-    ...init,
-  };
+  const sameOriginApi = isSameOriginApiUrl(url);
 
-  if (needsApiSign(url)) {
+  // 仅同源 /api 默认带 Cookie；外链（如七牛上传）绝不能 credentials:include，否则 CORS 直接 Failed to fetch
+  const initFinal: RequestInit = { ...init };
+  if (sameOriginApi && initFinal.credentials === undefined) {
+    initFinal.credentials = 'include';
+  }
+
+  if (needsApiSign(url) && sameOriginApi) {
     await ensureSessionBootstrap();
     const parsed = new URL(url, window.location.origin);
     const method = (init.method || 'GET').toUpperCase();
@@ -46,11 +59,11 @@ export async function fetchWithTimeout(
       canonicalApiQuery(parsed.searchParams),
       body,
     );
-    initWithCreds.headers = mergeHeaders(signHeaders, init.headers);
+    initFinal.headers = mergeHeaders(signHeaders, init.headers);
   }
 
   try {
-    return await fetch(input, { ...initWithCreds, signal: controller.signal });
+    return await fetch(input, { ...initFinal, signal: controller.signal });
   } finally {
     window.clearTimeout(timer);
   }
