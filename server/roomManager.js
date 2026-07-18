@@ -1118,6 +1118,44 @@ export function listRoomIds() {
   return Array.from(rooms.keys());
 }
 
+// 管理后台：全量房间列表（不过滤大厅隐藏房间，附带成员昵称）
+export function listRoomsForAdmin() {
+  return Array.from(rooms.values())
+    .map((room) => ({
+      id: room.id,
+      name: room.name,
+      userCount: room.users.size,
+      users: Array.from(room.users.values()).map((u) => ({ id: u.id, nickname: u.nickname })),
+      hasPassword: Boolean(room.passwordHash),
+      isLocked: Boolean(room.isLocked),
+      isPlaying: room.isPlaying,
+      currentSong: room.current
+        ? { name: room.current.name, artist: room.current.artist }
+        : null,
+      queueLength: room.queue.length,
+      createdAt: room.createdAt,
+    }))
+    .sort((a, b) => b.userCount - a.userCount || b.createdAt - a.createdAt);
+}
+
+// 管理后台：立即解散房间（调用方负责先踢出房内 socket）
+export function adminDestroyRoom(roomId) {
+  const id = roomId?.toUpperCase();
+  const room = rooms.get(id);
+  if (!room) return { success: false, error: '房间不存在' };
+  const name = room.name;
+  cancelRoomDestroy(room);
+  clearAllPendingLeaveClears(room);
+  clearSkipRequestExpiryTimersForRoom(id);
+  rooms.delete(id);
+  invalidateRoomsListCache();
+  deleteRoomChatImages(id)
+    .catch((err) => console.error(`删除房间 ${id} 聊天图片失败:`, err))
+    .then(() => deleteRoomFromStorage(id))
+    .catch((err) => console.error(`删除房间 ${id} 存储失败:`, err));
+  return { success: true, name };
+}
+
 export function getRoomPublic(roomId) {
   const room = rooms.get(roomId?.toUpperCase());
   if (!room) return null;
