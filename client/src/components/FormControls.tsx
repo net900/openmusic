@@ -106,8 +106,8 @@ export function AdminSwitch({
         }`}
       >
         <span
-          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 ${
-            checked ? 'translate-x-[1.125rem]' : 'translate-x-0.5'
+          className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 ${
+            checked ? 'translate-x-4' : 'translate-x-0'
           }`}
         />
       </span>
