@@ -15,7 +15,13 @@ const root = path.join(__dirname, '..');
 const outDir = path.join(root, 'release', 'openmusic');
 const archivePath = path.join(root, 'release', 'openmusic-build.zip');
 
-const SERVER_STATIC = ['package.json', 'package-lock.json', '.env.example'];
+const SERVER_STATIC = [
+  'package.json',
+  'package-lock.json',
+  '.env.example',
+  'siteAnnouncement.json',
+  'siteAnnouncement.example.json',
+];
 
 function getServerFiles() {
   const serverDir = path.join(root, 'server');
