@@ -135,7 +135,8 @@ export async function fetchMetingApi(query, options = {}, timeoutMs = 10000) {
       // 全部为空才把空结果返回给调用方（response.text 为缓冲实现，可重复读取）
       if (isSearch && response.status === 200) {
         try {
-          const data = JSON.parse(await response.text());
+          const text = typeof response.clone === 'function' ? await response.clone().text() : await response.text();
+          const data = JSON.parse(text);
           if (Array.isArray(data) && data.length === 0) {
             emptySearchResponse = response;
             continue;
