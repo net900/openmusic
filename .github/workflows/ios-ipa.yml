@@ -6,7 +6,7 @@ on:
       server_url:
         description: '远程站点 URL（与 CLIENT_URL 一致，须 HTTPS）'
         required: true
-        default: 'https://m.qqovo.cn'
+        default: 'https://qqovo.top'
 
 jobs:
   build:

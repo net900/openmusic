@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   CheckCircleOutlined,
   CloudServerOutlined,
@@ -32,9 +32,15 @@ type RedisMode = 'host' | 'url';
 interface SetupResult {
   ok: boolean;
   restartRequired: boolean;
+  autoRestarting?: boolean;
   adminPath: string;
   username: string;
   password: string;
+}
+
+interface DockerDefaults {
+  redisUrl: string;
+  metingUrl: string;
 }
 
 function randomAdminPath() {
@@ -79,6 +85,24 @@ function SetupPage() {
   const [result, setResult] = useState<SetupResult | null>(null);
   const [appRoot, setAppRoot] = useState('/www/sjbmusic');
   const [showNginx, setShowNginx] = useState(true);
+  const [dockerDefaults, setDockerDefaults] = useState<DockerDefaults | null>(null);
+
+  useEffect(() => {
+    fetch('/api/setup/status', { credentials: 'same-origin' })
+      .then((r) => r.json())
+      .then((data: { dockerDefaults?: DockerDefaults }) => {
+        if (data.dockerDefaults) {
+          setDockerDefaults(data.dockerDefaults);
+          setMode('url');
+          setRedisUrl(data.dockerDefaults.redisUrl);
+          setRedisOk(true);
+          if (data.dockerDefaults.metingUrl) {
+            setMetingApiUrl(data.dockerDefaults.metingUrl);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const redis = useMemo(() => (
     mode === 'url'
@@ -171,7 +195,9 @@ function SetupPage() {
                   </Typography.Title>
                 </Space>
                 <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                  配置已保存且安装入口已锁定。请重启 OpenMusic 服务后继续。
+                  {result.autoRestarting
+                    ? '配置已保存且安装入口已锁定。服务正在自动重启，请稍候刷新页面。'
+                    : '配置已保存且安装入口已锁定。请重启 OpenMusic 服务后继续。'}
                 </Typography.Paragraph>
                 <Card size="small" styles={{ body: { background: '#fafafa' } }}>
                   <Space direction="vertical" size={8} style={{ width: '100%' }}>
@@ -198,13 +224,23 @@ function SetupPage() {
                   <Button icon={<CopyOutlined />} onClick={() => void copyCredentials()}>
                     复制账号信息
                   </Button>
-                  <Button
-                    type="primary"
-                    icon={<ReloadOutlined />}
-                    onClick={() => window.location.reload()}
-                  >
-                    服务重启后刷新
-                  </Button>
+                  {result.autoRestarting ? (
+                    <Button
+                      type="primary"
+                      icon={<ReloadOutlined />}
+                      onClick={() => setTimeout(() => window.location.reload(), 0)}
+                    >
+                      刷新页面（等待约 5 秒）
+                    </Button>
+                  ) : (
+                    <Button
+                      type="primary"
+                      icon={<ReloadOutlined />}
+                      onClick={() => window.location.reload()}
+                    >
+                      服务重启后刷新
+                    </Button>
+                  )}
                 </Space>
               </Space>
             </Card>
@@ -290,6 +326,14 @@ function SetupPage() {
             )}
           >
             <Form layout="vertical" requiredMark={false}>
+              {dockerDefaults && (
+                <Alert
+                  type="success"
+                  showIcon
+                  message="已通过 Docker 环境自动配置 Redis"
+                  style={{ marginBottom: 16 }}
+                />
+              )}
               <Form.Item label="配置方式" style={{ marginBottom: 16 }}>
                 <Radio.Group
                   value={mode}
@@ -410,6 +454,14 @@ function SetupPage() {
             )}
           >
             <Form layout="vertical" requiredMark={false}>
+              {dockerDefaults?.metingUrl && (
+                <Alert
+                  type="success"
+                  showIcon
+                  message="已通过 Docker 环境自动配置 Meting 地址"
+                  style={{ marginBottom: 16 }}
+                />
+              )}
               <Form.Item label="Meting 地址" style={{ marginBottom: 16 }}>
                 <Input
                   value={metingApiUrl}

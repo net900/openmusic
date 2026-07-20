@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # OpenMusic 一键部署脚本
 # 用法：
-#   bash deploy/deploy.sh docker   # Docker 部署（自带 Redis，推荐）
-#   bash deploy/deploy.sh source   # 源码部署（PM2 常驻进程）
-#   bash deploy/deploy.sh          # 交互式选择
+#   bash deploy/deploy.sh docker        # Docker 部署（自带 Redis，推荐）
+#   bash deploy/deploy.sh docker-full   # Docker 全量部署（自带 Redis + Meting）
+#   bash deploy/deploy.sh source        # 源码部署（PM2 常驻进程）
+#   bash deploy/deploy.sh               # 交互式选择
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,7 +26,21 @@ print_banner() {
 EOF
 }
 
-# ---------- Docker 部署 ----------
+# ---------- Docker 通用准备 ----------
+
+check_docker() {
+  if ! require_cmd docker; then
+    err "未检测到 docker，请先安装：https://docs.docker.com/engine/install/"
+    exit 1
+  fi
+  local compose_cmd
+  compose_cmd="$(resolve_compose_cmd)"
+  if [ -z "$compose_cmd" ]; then
+    err "未检测到 docker compose（插件或独立版本均可），请先安装"
+    exit 1
+  fi
+  echo "$compose_cmd"
+}
 
 resolve_compose_cmd() {
   if docker compose version >/dev/null 2>&1; then
@@ -37,34 +52,27 @@ resolve_compose_cmd() {
   fi
 }
 
-deploy_docker() {
-  if ! require_cmd docker; then
-    err "未检测到 docker，请先安装：https://docs.docker.com/engine/install/"
-    exit 1
-  fi
-  local compose_cmd
-  compose_cmd="$(resolve_compose_cmd)"
-  if [ -z "$compose_cmd" ]; then
-    err "未检测到 docker compose（插件或独立版本均可），请先安装"
-    exit 1
-  fi
-  info "使用命令：$compose_cmd"
-
-  # 持久化配置文件在首次启动前必须以「文件」形式存在，否则 Docker 会把
-  # bind mount 目标当成目录创建，导致容器内 .env 等文件读写失败
+prepare_data_dir() {
   mkdir -p data/downloads
   [ -f data/.env ] || : > data/.env
   [ -f data/runtimeConfig.json ] || echo '{}' > data/runtimeConfig.json
   [ -f data/adminConfig.json ] || echo '{}' > data/adminConfig.json
   [ -f data/setup.lock ] || : > data/setup.lock
-  # 空文件不能满足 JSON.parse，但代码里都做了 try/catch + existsSync 判断，首次启动会走默认值。
-  # setup.lock 必须保持真正为空（0 字节）——非空才会被判定为「已完成安装」。
   if [ -s data/setup.lock ]; then
     err "data/setup.lock 非空，为避免误判安装状态已中止；如需重新安装请先清空该文件"
     exit 1
   fi
+}
 
-  info "构建镜像并启动容器（redis + openmusic）..."
+# ---------- Docker 精简版（不含 Meting） ----------
+
+deploy_docker() {
+  local compose_cmd
+  compose_cmd="$(check_docker)"
+  info "使用命令：$compose_cmd"
+  prepare_data_dir
+
+  info "启动容器（redis + openmusic）..."
   $compose_cmd up -d --build
 
   ok "部署完成"
@@ -73,14 +81,41 @@ deploy_docker() {
 
 下一步：
   1. 浏览器打开 http://<服务器IP>:${port}/setup 完成首次部署向导
-     - Redis 主机名填 redis，端口 6379（compose 内部服务名，无需公网地址）
-     - Meting/音源、站点地址等按需填写；也可留空，之后到管理后台再配置
-  2. 向导完成后需要重启一次服务使 .env 生效：
-     $compose_cmd restart openmusic
+     - Redis 已自动配置，只需填 Meting 音源地址和站点域名
+  2. 向导完成后服务会自动重启，刷新页面即可
   3. 常用命令：
      $compose_cmd logs -f openmusic   # 查看日志
      $compose_cmd down                # 停止
      $compose_cmd up -d --build       # 更新代码后重新构建启动
+EOF
+}
+
+# ---------- Docker 全量版（含 Meting） ----------
+
+deploy_docker_full() {
+  local compose_cmd
+  compose_cmd="$(check_docker)"
+  info "使用命令：$compose_cmd -f docker-compose.full.yml"
+  prepare_data_dir
+
+  info "启动容器（redis + meting + openmusic）..."
+  $compose_cmd -f docker-compose.full.yml up -d --build
+
+  ok "部署完成（全量版，含 Meting）"
+  local port="${OPENMUSIC_PORT:-4000}"
+  cat <<EOF
+
+下一步：
+  1. 浏览器打开 http://<服务器IP>:${port}/setup 完成首次部署向导
+     - Redis 和 Meting 已自动配置，只需填站点域名
+  2. 向导完成后服务会自动重启，刷新页面即可
+  3. Meting 管理后台：http://<服务器IP>:${port} 不直接暴露 Meting 端口，
+     如需配置 Meting Cookie，可进入容器：
+     docker exec -it \$(docker compose -f docker-compose.full.yml ps -q meting) sh
+  4. 常用命令：
+     $compose_cmd -f docker-compose.full.yml logs -f openmusic   # 查看日志
+     $compose_cmd -f docker-compose.full.yml down                # 停止
+     $compose_cmd -f docker-compose.full.yml up -d --build       # 更新后重建
 EOF
 }
 
@@ -157,21 +192,24 @@ main() {
   local mode="${1:-}"
   if [ -z "$mode" ]; then
     echo "请选择部署方式："
-    echo "  1) Docker 部署（推荐，自带 Redis 容器）"
-    echo "  2) 源码部署（PM2，需自行提供 Redis）"
-    read -r -p "输入 1 或 2: " choice
+    echo "  1) Docker 部署（推荐，自带 Redis）"
+    echo "  2) Docker 全量部署（自带 Redis + Meting，最省心）"
+    echo "  3) 源码部署（PM2，需自行提供 Redis）"
+    read -r -p "输入 1、2 或 3: " choice
     case "$choice" in
       1) mode="docker" ;;
-      2) mode="source" ;;
+      2) mode="docker-full" ;;
+      3) mode="source" ;;
       *) err "无效选择"; exit 1 ;;
     esac
   fi
 
   case "$mode" in
-    docker) deploy_docker ;;
-    source) deploy_source ;;
+    docker)      deploy_docker ;;
+    docker-full) deploy_docker_full ;;
+    source)      deploy_source ;;
     *)
-      err "未知部署方式：$mode（可选 docker / source）"
+      err "未知部署方式：$mode（可选 docker / docker-full / source）"
       exit 1
       ;;
   esac

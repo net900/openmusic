@@ -319,12 +319,24 @@ function validateMetingUrl(raw) {
   return parts.join(',');
 }
 
+function getDockerDefaults() {
+  const redisUrl = String(process.env.DOCKER_REDIS_URL || '').trim();
+  const metingUrl = String(process.env.DOCKER_METING_URL || '').trim();
+  if (!redisUrl) return null;
+  return { redisUrl, metingUrl: metingUrl || '' };
+}
+
+function isDockerEnvironment() {
+  return Boolean(String(process.env.DOCKER_REDIS_URL || '').trim());
+}
+
 export function mountSetupApi(app) {
   migrateLegacySetupLock();
 
   app.get('/api/setup/status', (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ setupRequired: isSetupRequired() });
+    const dockerDefaults = isSetupRequired() ? getDockerDefaults() : null;
+    res.json({ setupRequired: isSetupRequired(), ...(dockerDefaults ? { dockerDefaults } : {}) });
   });
 
   app.post('/api/setup/test-redis', requireSameHost, async (req, res) => {
@@ -396,11 +408,16 @@ export function mountSetupApi(app) {
       return isChksz ? chkszApiKey : metingApiAuth;
     });
 
-    const result = await connectRedis(req.body?.redis);
+    const dockerDefs = getDockerDefaults();
+    const redisInput = req.body?.redis ?? (dockerDefs ? { mode: 'url', url: dockerDefs.redisUrl } : undefined);
+    const result = await connectRedis(redisInput);
     if (result.error) return res.status(400).json({ error: result.error });
 
+    if (!metingSources.length && dockerDefs?.metingUrl) {
+      metingSources.push(dockerDefs.metingUrl);
+    }
+
     try {
-      // 安装完成随机生成账号密码（已足够强，不再强制改密；入口路径已在向导中设为非 /admin）
       const username = generateBootstrapUsername();
       const password = generateBootstrapPassword();
       await createBootstrapCredentials(result.client, username, password, { mustChange: false });
@@ -421,13 +438,21 @@ export function mountSetupApi(app) {
       if (!pathResult.success) throw new Error(pathResult.error);
       writeSetupLock({ siteUrl: siteUrl || '', adminPath });
       await result.client.quit();
+
+      const willAutoRestart = isDockerEnvironment();
       res.json({
         ok: true,
-        restartRequired: true,
+        restartRequired: !willAutoRestart,
+        autoRestarting: willAutoRestart,
         adminPath,
         username,
         password,
       });
+
+      if (willAutoRestart) {
+        console.log('setup: Docker 环境检测到，2 秒后自动重启进程…');
+        setTimeout(() => process.exit(0), 2000);
+      }
     } catch (err) {
       try {
         if (result.client.isOpen) await result.client.quit();

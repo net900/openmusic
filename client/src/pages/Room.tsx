@@ -643,6 +643,12 @@ export default function Room() {
     // 清除上一次被踢/被解散残留的退出原因，否则新房间会误显示旧提示并被弹回首页
     useRoomStore.getState().setExitReason(null);
 
+    const navState = location.state as { hasPassword?: boolean } | null;
+    if (navState?.hasPassword && !roomPassword?.trim()) {
+      setNeedsPasswordPrompt(true);
+      return;
+    }
+
     joinRoom(roomId, nick, roomPassword).then((res) => {
       if (cancelled) return;
       if (!res.success) {
