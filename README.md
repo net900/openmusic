@@ -31,26 +31,28 @@
 
 ## 🚀 快速开始
 
-### Docker（推荐，三步搞定）
+### Docker 部署（推荐）
 
 ```bash
-git clone https://github.com/wqqqqqq200/openmusic.git
-cd openmusic
+# 下载 compose 文件，直接拉镜像运行（无需克隆源码）
+curl -O https://raw.githubusercontent.com/wqqqqqq200/openmusic/main/docker-compose.full.yml
+mkdir -p data/downloads && touch data/.env data/setup.lock && echo '{}' > data/runtimeConfig.json && echo '{}' > data/adminConfig.json
 docker compose -f docker-compose.full.yml up -d
 ```
 
 打开 `http://<IP>:4000`，Redis 和 Meting 已自动配好，填个站点域名就完事。向导完成后自动重启。
 
-> 不需要 Meting？用 `docker compose up -d`（精简版，只带 Redis）。
-> 预构建镜像：`docker pull w3126197382/openmusic:latest`
+> 不需要内置 Meting？改用 `docker-compose.yml`。宝塔用户见 [宝塔部署](deploy/DEPLOY-BAOTA.md)。
+> 更新：`docker compose pull && docker compose up -d`
 
 ### 源码部署
 
 ```bash
+git clone https://github.com/wqqqqqq200/openmusic.git && cd openmusic
 npm run install:all && npm run build && npm start
 ```
 
-打开站点自动进入部署向导，填 Redis、Meting、域名即可。详见 [部署文档](docs/DEPLOY.md)。
+打开站点自动进入部署向导。详见 [部署文档](docs/DEPLOY.md)。
 
 > 开发模式：`npm run dev`（前端 `:5173`，后端 `:4000`）
 

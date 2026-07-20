@@ -4,29 +4,29 @@
 
 ### Docker 部署（推荐）
 
-```bash
-git clone https://github.com/wqqqqqq200/openmusic.git
-cd openmusic
+无需克隆源码，直接拉镜像运行：
 
-# 全量版：自带 Redis + Meting（最省心）
+```bash
+# 下载 compose 文件
+curl -O https://raw.githubusercontent.com/wqqqqqq200/openmusic/main/docker-compose.full.yml
+
+# 准备持久化目录
+mkdir -p data/downloads
+touch data/.env data/setup.lock
+echo '{}' > data/runtimeConfig.json
+echo '{}' > data/adminConfig.json
+
+# 启动（全量版：Redis + Meting + OpenMusic）
 docker compose -f docker-compose.full.yml up -d
-
-# 精简版：自带 Redis，Meting 自行准备
-# docker compose up -d
 ```
 
-打开 `http://<IP>:4000`，Docker 环境下 Redis / Meting 已自动填好，只需填站点域名。向导完成后自动重启，刷新即可用。
+打开 `http://<IP>:4000`，Redis / Meting 已自动填好，只需填站点域名。完成后自动重启。
 
-预构建镜像：`docker pull w3126197382/openmusic:latest`
+> 不需要内置 Meting？下载 `docker-compose.yml` 代替。
+> 更新：`docker compose pull && docker compose up -d`
+> 宝塔用户：见 [宝塔部署指南](../deploy/DEPLOY-BAOTA.md)，可在 Docker 管理器里直接粘贴 compose。
 
-也可用一键脚本：
-
-```bash
-bash deploy/deploy.sh               # 交互选择
-bash deploy/deploy.sh docker        # 精简版
-bash deploy/deploy.sh docker-full   # 全量版
-bash deploy/deploy.sh source        # 源码 + PM2
-```
+有源码时也可用一键脚本：`bash deploy/deploy.sh`
 
 ### 源码部署
 
