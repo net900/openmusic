@@ -23,9 +23,28 @@
 
 ## 📸 项目截图
 
-| 房间大厅 | 房间点歌 | 歌词播放 | 管理后台 |
-|:---:|:---:|:---:|:---:|
-| ![大厅](docs/screenshots/home.png) | ![房间](docs/screenshots/room.png) | ![歌词](docs/screenshots/lyrics.png) | ![管理后台](docs/screenshots/admin.png) |
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <a href="docs/screenshots/home.png"><img src="docs/screenshots/home.png" alt="房间大厅" width="100%" /></a>
+      <br/><sub><b>房间大厅</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <a href="docs/screenshots/room.png"><img src="docs/screenshots/room.png" alt="房间点歌" width="100%" /></a>
+      <br/><sub><b>房间点歌</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <a href="docs/screenshots/lyrics.png"><img src="docs/screenshots/lyrics.png" alt="歌词播放" width="100%" /></a>
+      <br/><sub><b>歌词播放</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <a href="docs/screenshots/admin.png"><img src="docs/screenshots/admin.png" alt="管理后台" width="100%" /></a>
+      <br/><sub><b>管理后台</b></sub>
+    </td>
+  </tr>
+</table>
 
 ---
 

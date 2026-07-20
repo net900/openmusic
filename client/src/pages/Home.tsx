@@ -12,6 +12,7 @@ import type { RoomSummary } from '../types';
 import { createRandomNickname } from '../lib/randomNickname';
 import { usePageSeo } from '../lib/seo';
 import { partitionRoomsByRecent } from '../lib/recentRooms';
+import { getStoredRoomPassword } from '../lib/roomPassword';
 import { areRoomListsEqual, isLobbyHardLocked, sortLobbyRooms } from '../lib/roomListCompare';
 import { isMobileDevice } from '../lib/audioUnlock';
 import { ANDROID_APK_URL } from '../lib/androidDownload';
@@ -252,10 +253,6 @@ const RoomCard = memo(function RoomCard({
     </>
   );
 
-  if (hardLocked) {
-    return <div className={cardClassName} aria-disabled="true">{body}</div>;
-  }
-
   return (
     <button
       type="button"
@@ -431,13 +428,17 @@ export default function Home() {
   };
 
   const handleRoomCardClick = useCallback((room: RoomSummary) => {
-    if (isLobbyHardLocked(room)) return;
     const trimmed = nickname.trim();
     if (!trimmed) {
       setNickname(createRandomNickname());
     }
     setError('');
-    navigate(`/room/${room.id}`);
+    const storedPassword = getStoredRoomPassword(room.id);
+    if (room.hasPassword && !storedPassword) {
+      navigate(`/room/${room.id}`, { state: { hasPassword: true } });
+      return;
+    }
+    goToRoom(room.id, storedPassword);
   }, [nickname, navigate, setNickname]);
 
   const { recent: recentRooms, others: otherRooms } = useMemo(() => {
