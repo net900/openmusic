@@ -5,5 +5,5 @@
     "优化首页样式",
     "修复其他已知问题"
   ],
-  "forcePrompt": true
+  "forcePrompt": false
 }

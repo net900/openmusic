@@ -92,22 +92,27 @@ body {
   animation-play-state: running;
 }
 
-/* 首页按钮：鼠标跟随的触摸倾斜 3D */
+/* 首页按钮：外层保持命中区域稳定，倾斜只作用在内层面，避免 transform 导致 hover 闪烁 */
 .btn-tilt {
-  transform: perspective(520px) rotateX(var(--brx, 0deg)) rotateY(var(--bry, 0deg));
+  position: relative;
   transition:
-    transform 0.18s ease-out,
     background-color 0.3s ease,
     border-color 0.3s ease,
     box-shadow 0.3s ease;
-  will-change: transform;
 }
 
-.btn-tilt:active {
+.btn-tilt .btn-tilt-face {
+  transform: perspective(520px) rotateX(var(--brx, 0deg)) rotateY(var(--bry, 0deg));
+  transition: transform 0.18s ease-out;
+  will-change: transform;
+  transform-origin: center center;
+}
+
+.btn-tilt:active .btn-tilt-face {
   transform: perspective(520px) rotateX(var(--brx, 0deg)) rotateY(var(--bry, 0deg)) scale(0.95);
 }
 
-/* 按钮：hover 时一道光泽斜扫而过 */
+/* 按钮：hover 时一道光泽斜扫而过（只播一次，离开后复位） */
 .btn-shine {
   position: relative;
   overflow: hidden;
@@ -116,13 +121,12 @@ body {
 .btn-shine::after {
   content: '';
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
+  inset: 0 auto 0 0;
   width: 36%;
   background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.32), transparent);
   transform: translateX(-160%) skewX(-18deg);
   pointer-events: none;
+  z-index: 1;
 }
 
 .btn-shine:hover::after {
@@ -139,8 +143,8 @@ body {
   .btn-shine:hover::after {
     animation: none;
   }
-  .btn-tilt,
-  .btn-tilt:active {
+  .btn-tilt .btn-tilt-face,
+  .btn-tilt:active .btn-tilt-face {
     transform: none;
   }
 }
@@ -170,7 +174,6 @@ body {
   transform: scale(1.035);
 }
 
-/* 首尾同色的周期渐变 + 单向匀速位移，流光循环无缝、不会折返 */
 .hero-gradient-text {
   background-image: linear-gradient(
     90deg,
@@ -184,7 +187,6 @@ body {
   animation: hero-gradient-flow 8s linear infinite;
 }
 
-/* background-position 变负值 = 背景图右移 = 流光从左向右淌 */
 @keyframes hero-gradient-flow {
   to {
     background-position: -200% 50%;
@@ -197,6 +199,42 @@ body {
 
 .hero-gradient:hover .hero-gradient-glow {
   opacity: 0.95;
+}
+
+/* 房间卡片标题：金属顶光渐变裁进文字 + 上白边/下黑边双向 bevel + 投影，浮雕立体感 */
+.text-emboss {
+  background-image: linear-gradient(
+    180deg,
+    #ffffff 0%,
+    #f4f5f9 34%,
+    #c3c6d6 52%,
+    #82869c 74%,
+    #a9adc0 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter:
+    drop-shadow(0 -1px 0 rgba(255, 255, 255, 0.35))
+    drop-shadow(0 2px 0 rgba(0, 0, 0, 0.95))
+    drop-shadow(0 4px 3px rgba(0, 0, 0, 0.6))
+    drop-shadow(0 10px 16px rgba(0, 0, 0, 0.55));
+  transition: filter 0.3s ease;
+}
+
+.group:hover .text-emboss {
+  background-image: linear-gradient(
+    180deg,
+    #ffffff 0%,
+    #ffffff 38%,
+    #d6d9e6 54%,
+    #979cb4 74%,
+    #c0c4d6 100%
+  );
+  filter:
+    drop-shadow(0 -1px 0 rgba(255, 255, 255, 0.3))
+    drop-shadow(0 2px 1px rgba(0, 0, 0, 0.9))
+    drop-shadow(0 12px 20px rgba(0, 0, 0, 0.6));
 }
 
 /* Hero 副文案：鼠标跟随的局部提亮（radial 渐变裁剪进文字），移出后淡出 */

@@ -37,21 +37,24 @@ function GiteeIcon({ className }: { className?: string }) {
 
 const repoLinkCls = 'p-2.5 rounded-full text-white/50 border border-white/5 bg-white/[0.02] hover:text-white hover:bg-white/10 hover:border-white/10 transition-all duration-300';
 
-/** 顶部品牌字：hover 时逐字母点亮成的渐变色 */
-const BRAND_LETTERS = 'OpenMusic'.split('').map((char, i, arr) => {
-  const t = arr.length > 1 ? i / (arr.length - 1) : 0;
-  // 品牌红 → 玫红 → 紫，跨整个词插值
+/** 逐字母渐变色：品牌红 → 玫红 → 紫，跨整个词插值（hover 时逐字点亮） */
+function buildGradientLetters(text: string) {
   const stops = [
     [255, 77, 85],
     [244, 114, 182],
     [192, 132, 252],
   ];
-  const seg = t * (stops.length - 1);
-  const idx = Math.min(Math.floor(seg), stops.length - 2);
-  const f = seg - idx;
-  const mix = stops[idx].map((v, c) => Math.round(v + (stops[idx + 1][c] - v) * f));
-  return { char, color: `rgb(${mix[0]}, ${mix[1]}, ${mix[2]})` };
-});
+  return text.split('').map((char, i, arr) => {
+    const t = arr.length > 1 ? i / (arr.length - 1) : 0;
+    const seg = t * (stops.length - 1);
+    const idx = Math.min(Math.floor(seg), stops.length - 2);
+    const f = seg - idx;
+    const mix = stops[idx].map((v, c) => Math.round(v + (stops[idx + 1][c] - v) * f));
+    return { char, color: `rgb(${mix[0]}, ${mix[1]}, ${mix[2]})` };
+  });
+}
+
+const BRAND_LETTERS = buildGradientLetters('OpenMusic');
 
 const COVER_GRADIENTS = [
   'from-rose-500 to-orange-400',
@@ -183,7 +186,7 @@ const RoomCard = memo(function RoomCard({
         <div className="flex items-center gap-5" style={{ transformStyle: 'preserve-3d' }}>
           {/* 封面区块（倾斜时视差浮起） */}
           <div className="relative flex-shrink-0 transition-transform duration-300 ease-out [transform:translateZ(0)] group-hover:[transform:translateZ(45px)]">
-            <div className={`w-16 h-16 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-lg transition-all duration-300 ${hardLocked ? 'grayscale' : 'group-hover:shadow-2xl group-hover:shadow-black/50 group-hover:scale-105'}`}>
+            <div className={`w-16 h-16 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center transition-all duration-300 shadow-[0_10px_22px_rgba(0,0,0,0.55),0_2px_5px_rgba(0,0,0,0.5),inset_0_1.5px_0_rgba(255,255,255,0.35),inset_0_-2px_4px_rgba(0,0,0,0.35)] ${hardLocked ? 'grayscale' : 'group-hover:shadow-[0_18px_36px_rgba(0,0,0,0.65),0_3px_7px_rgba(0,0,0,0.5),inset_0_1.5px_0_rgba(255,255,255,0.4),inset_0_-2px_4px_rgba(0,0,0,0.35)] group-hover:scale-105'}`}>
               {isActive && !hardLocked ? (
                 <EqualizerBars className="text-white drop-shadow-md scale-110" />
               ) : (
@@ -201,7 +204,7 @@ const RoomCard = memo(function RoomCard({
           <div className="min-w-0 flex-1 flex flex-col h-full justify-center transition-transform duration-300 ease-out [transform:translateZ(0)] group-hover:[transform:translateZ(24px)]">
             <div className="flex items-center gap-2.5 mb-1.5">
               {isRecent && (
-                <span className="flex-shrink-0 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-sky-200 bg-sky-500/20 ring-1 ring-sky-400/30 px-2 py-0.5 rounded-md font-bold shadow-[0_0_14px_rgba(56,189,248,0.35)]">
+                <span className="flex-shrink-0 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-sky-200 bg-gradient-to-b from-sky-400/30 to-sky-600/15 ring-1 ring-sky-400/30 px-2 py-0.5 rounded-md font-bold shadow-[0_2px_5px_rgba(0,0,0,0.5),0_0_14px_rgba(56,189,248,0.3),inset_0_1px_0_rgba(255,255,255,0.25)]">
                   <span className="relative flex h-1.5 w-1.5">
                     <span className="absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75 animate-ping" />
                     <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-sky-300" />
@@ -210,7 +213,7 @@ const RoomCard = memo(function RoomCard({
                 </span>
               )}
               {/* 房间名 */}
-              <h3 className={`text-xl sm:text-[22px] font-black tracking-tight truncate transition-colors duration-300 ${hardLocked ? 'text-white/50' : 'text-white/95 group-hover:text-white'}`}>
+              <h3 className={`text-xl sm:text-[22px] font-black tracking-tight truncate ${hardLocked ? 'text-white/50' : 'text-emboss'}`}>
                 {room.name}
               </h3>
               {room.hasPassword && !hardLocked && (
@@ -220,29 +223,31 @@ const RoomCard = memo(function RoomCard({
               )}
             </div>
 
+            {/* 歌名行：凹陷刻槽，和凸起的标题形成对比 */}
             {room.currentSong ? (
-              <div className="min-w-0 pr-2">
+              <div className="min-w-0 max-w-full self-start mt-0.5 rounded-lg bg-black/25 px-2.5 py-1 shadow-[inset_0_1.5px_3px_rgba(0,0,0,0.55),0_1px_0_rgba(255,255,255,0.06)]">
                 <p className={`flex items-center gap-1.5 text-[13px] truncate transition-colors ${isActive && !hardLocked ? 'text-white/65' : 'text-white/50'} group-hover:text-white/75`}>
                   {isActive && !hardLocked && (
                     <span className="flex-shrink-0 text-netease-red/80 text-[12px] animate-pulse">♪</span>
                   )}
-                  <span className="truncate">{room.currentSong.name}</span>
+                  {/* 歌名优先：不参与收缩、最多占满整行；歌手名只用剩余空间被截断 */}
+                  <span className="flex-none max-w-full truncate">{room.currentSong.name}</span>
                   <span className="flex-shrink-0 text-white/25">·</span>
-                  <span className="truncate text-white/35 group-hover:text-white/50 transition-colors">{room.currentSong.artist}</span>
+                  <span className="min-w-0 truncate text-white/35 group-hover:text-white/50 transition-colors">{room.currentSong.artist}</span>
                 </p>
               </div>
             ) : (
-              <p className="text-[13px] text-white/30 mt-0.5 italic group-hover:text-white/50 transition-colors">等待点播...</p>
+              <p className="self-start mt-0.5 rounded-lg bg-black/25 px-2.5 py-1 shadow-[inset_0_1.5px_3px_rgba(0,0,0,0.55),0_1px_0_rgba(255,255,255,0.06)] text-[13px] text-white/30 italic group-hover:text-white/50 transition-colors">等待点播...</p>
             )}
 
-            {/* 底部状态栏 */}
-            <div className="flex items-center gap-5 mt-4 pt-4 border-t border-white/[0.06] group-hover:border-white/[0.12] transition-colors">
-              <div className="flex items-center gap-4">
-                <span className="flex items-center gap-1.5 text-xs font-semibold text-white/50 group-hover:text-white/80 transition-colors">
+            {/* 底部状态栏：分隔线做成刻痕（上暗下亮） */}
+            <div className="flex items-center gap-5 mt-4 pt-3.5 border-t border-black/40 [box-shadow:inset_0_1px_0_rgba(255,255,255,0.08)] transition-colors">
+              <div className="flex items-center gap-2.5">
+                <span className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-white/55 group-hover:text-white/85 transition-colors bg-gradient-to-b from-white/[0.09] to-white/[0.02] border border-white/10 shadow-[0_2px_4px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.12)]">
                   <Users className="w-3.5 h-3.5 text-white/40 group-hover:text-emerald-400 group-hover:scale-110 transition-all duration-300" />
                   {room.userCount} 人
                 </span>
-                <span className="flex items-center gap-1.5 text-xs font-semibold text-white/50 group-hover:text-white/80 transition-colors">
+                <span className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-white/55 group-hover:text-white/85 transition-colors bg-gradient-to-b from-white/[0.09] to-white/[0.02] border border-white/10 shadow-[0_2px_4px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.12)]">
                   <ListMusic className="w-3.5 h-3.5 text-white/40 group-hover:text-violet-400 group-hover:scale-110 transition-all duration-300" />
                   {room.queueLength} 首
                 </span>
@@ -340,6 +345,7 @@ export default function Home() {
   const [createPassword, setCreatePassword] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [joinPassword, setJoinPassword] = useState('');
+  const [modalError, setModalError] = useState('');
   const [downloadModalOpen, setDownloadModalOpen] = useState(false);
   const [siteAnnouncement, setSiteAnnouncement] = useState<SiteAnnouncement | null>(null);
   const [siteAnnouncementOpen, setSiteAnnouncementOpen] = useState(false);
@@ -420,6 +426,7 @@ export default function Home() {
   const handleCreate = async () => {
     setActionLoading(true);
     setError('');
+    setModalError('');
     try {
       const room = await createRoom(createRoomName, createPassword);
       setShowCreate(false);
@@ -427,7 +434,7 @@ export default function Home() {
       setCreatePassword('');
       goToRoom(room.id, createPassword.trim() || undefined);
     } catch {
-      setError('创建房间失败，请重试');
+      setModalError('创建房间失败，请重试');
     } finally {
       setActionLoading(false);
     }
@@ -436,21 +443,24 @@ export default function Home() {
   const handleJoinByCode = async () => {
     const code = joinCode.trim().toUpperCase();
     if (!code) {
-      setError('请输入房间号');
+      setModalError('请输入房间号');
       return;
     }
     setActionLoading(true);
     setError('');
+    setModalError('');
     try {
       const result = await checkRoom(code);
       if (!result.exists) {
-        setError('房间不存在，请检查房间号');
+        setModalError('房间不存在，请检查房间号');
         return;
       }
       setShowJoin(false);
+      setJoinCode('');
+      setJoinPassword('');
       goToRoom(code, joinPassword.trim() || undefined);
     } catch {
-      setError('加入房间失败，请重试');
+      setModalError('加入房间失败，请重试');
     } finally {
       setActionLoading(false);
     }
@@ -561,7 +571,6 @@ export default function Home() {
               {' '}
               <br className="sm:hidden" />
               <span className="hero-gradient relative inline-block sm:ml-4">
-                {/* 底部辉光 */}
                 <span
                   aria-hidden
                   className="hero-gradient-glow hero-gradient-text absolute inset-0 text-transparent bg-clip-text blur-2xl opacity-60 select-none transition-opacity duration-500"
@@ -602,23 +611,27 @@ export default function Home() {
               <div className="flex gap-2.5">
                 <button
                   type="button"
-                  onClick={() => { setError(''); setShowCreate(true); }}
+                  onClick={() => { setError(''); setModalError(''); setShowCreate(true); }}
                   onMouseMove={handleBtnTilt}
                   onMouseLeave={resetBtnTilt}
-                  className="btn-shine btn-tilt group/create flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 sm:px-8 h-12 sm:h-14 rounded-full bg-netease-red hover:bg-netease-red/90 text-white font-semibold shadow-lg shadow-netease-red/25 hover:shadow-xl hover:shadow-netease-red/45 whitespace-nowrap"
+                  className="btn-shine btn-tilt group/create flex-1 sm:flex-none h-12 sm:h-14 px-6 sm:px-8 rounded-full bg-netease-red hover:bg-netease-red/90 text-white font-semibold shadow-lg shadow-netease-red/25 hover:shadow-xl hover:shadow-netease-red/45 whitespace-nowrap"
                 >
-                  <Plus className="w-5 h-5 transition-transform duration-300 ease-out group-hover/create:rotate-90" />
-                  创建房间
+                  <span className="btn-tilt-face flex h-full w-full items-center justify-center gap-2">
+                    <Plus className="w-5 h-5 transition-transform duration-300 ease-out group-hover/create:rotate-90" />
+                    创建房间
+                  </span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setError(''); setShowJoin(true); }}
+                  onClick={() => { setError(''); setModalError(''); setShowJoin(true); }}
                   onMouseMove={handleBtnTilt}
                   onMouseLeave={resetBtnTilt}
-                  className="btn-shine btn-tilt group/join flex-1 sm:flex-none flex items-center justify-center px-6 sm:px-8 h-12 sm:h-14 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 hover:border-white/25 text-white font-medium whitespace-nowrap"
+                  className="btn-shine btn-tilt group/join flex-1 sm:flex-none h-12 sm:h-14 px-6 sm:px-8 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 hover:border-white/25 text-white font-medium whitespace-nowrap"
                 >
-                  加入
-                  <ArrowRight className="h-4 w-0 ml-0 opacity-0 -translate-x-1 group-hover/join:w-4 group-hover/join:ml-1.5 group-hover/join:opacity-100 group-hover/join:translate-x-0 transition-all duration-300 ease-out" />
+                  <span className="btn-tilt-face flex h-full w-full items-center justify-center">
+                    加入
+                    <ArrowRight className="h-4 w-0 ml-0 opacity-0 -translate-x-1 group-hover/join:w-4 group-hover/join:ml-1.5 group-hover/join:opacity-100 group-hover/join:translate-x-0 transition-all duration-300 ease-out" />
+                  </span>
                 </button>
               </div>
             </div>
@@ -711,81 +724,125 @@ export default function Home() {
 
       {/* 弹窗: 创建房间 */}
       {showCreate && (
-        <Modal title="创建新房间" onClose={() => { setShowCreate(false); setCreateRoomName(''); setCreatePassword(''); }}>
-          <div className="space-y-5">
+        <Modal title="创建新房间" onClose={() => { setShowCreate(false); setCreateRoomName(''); setCreatePassword(''); setModalError(''); }}>
+          <form
+            className="space-y-5"
+            autoComplete="off"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!actionLoading) void handleCreate();
+            }}
+          >
             <div>
               <label className="block text-sm font-medium text-white/60 mb-2 pl-1">给房间起个名字</label>
               <input
                 type="text"
+                name="om-room-name"
                 value={createRoomName}
-                onChange={(e) => setCreateRoomName(e.target.value)}
+                onChange={(e) => { setCreateRoomName(e.target.value); if (modalError) setModalError(''); }}
                 placeholder="例如：周杰伦专场、深夜EMO"
                 maxLength={30}
                 className={inputCls}
                 autoFocus
+                autoComplete="off"
+                data-1p-ignore
+                data-lpignore="true"
+                data-form-type="other"
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-white/60 mb-2 pl-1">访问密码 <span className="text-white/30 font-normal">(可选)</span></label>
               <input
                 type="password"
+                name="om-room-access-code"
                 value={createPassword}
-                onChange={(e) => setCreatePassword(e.target.value)}
+                onChange={(e) => { setCreatePassword(e.target.value); if (modalError) setModalError(''); }}
                 placeholder="留空即为公开房间"
                 maxLength={32}
                 className={inputCls}
+                autoComplete="new-password"
+                data-1p-ignore
+                data-lpignore="true"
+                data-form-type="other"
               />
             </div>
+            {modalError && (
+              <div className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                <Activity className="w-4 h-4 flex-shrink-0" />
+                {modalError}
+              </div>
+            )}
             <button
-              type="button"
-              onClick={handleCreate}
+              type="submit"
               disabled={actionLoading}
               className="w-full flex items-center justify-center gap-2 bg-white text-black hover:bg-gray-200 disabled:opacity-50 font-bold py-4 rounded-2xl transition-all mt-2"
             >
               {actionLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
               开启音乐之旅
             </button>
-          </div>
+          </form>
         </Modal>
       )}
 
       {/* 弹窗: 加入房间 */}
       {showJoin && (
-        <Modal title="加入房间" onClose={() => { setShowJoin(false); setJoinCode(''); setJoinPassword(''); }}>
-          <div className="space-y-5">
+        <Modal title="加入房间" onClose={() => { setShowJoin(false); setJoinCode(''); setJoinPassword(''); setModalError(''); }}>
+          <form
+            className="space-y-5"
+            autoComplete="off"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!actionLoading) void handleJoinByCode();
+            }}
+          >
             <div>
               <label className="block text-sm font-medium text-white/60 mb-2 pl-1">房间代码</label>
               <input
                 type="text"
+                name="om-room-code"
                 value={joinCode}
-                onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                onChange={(e) => { setJoinCode(e.target.value.toUpperCase()); if (modalError) setModalError(''); }}
                 placeholder="输入 6 位房间号"
                 maxLength={6}
                 className={`${inputCls} uppercase tracking-[0.2em] font-mono text-center text-lg`}
                 autoFocus
+                autoComplete="off"
+                data-1p-ignore
+                data-lpignore="true"
+                data-form-type="other"
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-white/60 mb-2 pl-1">房间密码 <span className="text-white/30 font-normal">(如未上锁请留空)</span></label>
               <input
                 type="password"
+                name="om-room-join-code"
                 value={joinPassword}
-                onChange={(e) => setJoinPassword(e.target.value)}
+                onChange={(e) => { setJoinPassword(e.target.value); if (modalError) setModalError(''); }}
                 placeholder="输入密码"
                 maxLength={32}
                 className={inputCls}
+                autoComplete="new-password"
+                data-1p-ignore
+                data-lpignore="true"
+                data-form-type="other"
               />
             </div>
+            {modalError && (
+              <div className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                <Activity className="w-4 h-4 flex-shrink-0" />
+                {modalError}
+              </div>
+            )}
             <button
-              type="button"
-              onClick={handleJoinByCode}
+              type="submit"
               disabled={actionLoading}
               className="w-full flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 border border-white/10 disabled:opacity-50 text-white font-bold py-4 rounded-2xl transition-all mt-2"
             >
               {actionLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowRight className="w-5 h-5" />}
               立即加入
             </button>
-          </div>
+          </form>
         </Modal>
       )}
 

@@ -671,6 +671,8 @@ export default function Room() {
           }
           return;
         }
+        // 房间不存在等永久失败：清掉残留会话，避免重连逻辑一直转圈重试
+        void leaveRoom();
         setJoinError(res.error || '加入房间失败');
         redirectTimer = window.setTimeout(() => navigate('/'), 2000);
         return;
@@ -1570,6 +1572,7 @@ export default function Room() {
           <label className="block text-xs text-white/50 mb-1.5">房间密码</label>
           <input
             type="password"
+            name="om-room-entry-code"
             value={passwordDraft}
             onChange={(e) => {
               setPasswordDraft(e.target.value);
@@ -1580,6 +1583,10 @@ export default function Room() {
             }}
             maxLength={32}
             autoFocus
+            autoComplete="new-password"
+            data-1p-ignore
+            data-lpignore="true"
+            data-form-type="other"
             placeholder="输入房间密码"
             className="w-full bg-netease-dark border border-netease-border rounded-xl px-4 py-2.5 text-white text-sm placeholder:text-netease-muted/50 focus:outline-none focus:border-netease-red/50 mb-3"
           />
@@ -2976,9 +2983,14 @@ export default function Room() {
                 <label className="block text-xs text-white/50 mb-1.5">进入密码（可选）</label>
                 <input
                   type="password"
+                  name="om-room-lock-code"
                   value={lockPassword}
                   onChange={(e) => setLockPassword(e.target.value)}
                   maxLength={32}
+                  autoComplete="new-password"
+                  data-1p-ignore
+                  data-lpignore="true"
+                  data-form-type="other"
                   placeholder="留空则仅创建者可进入"
                   className="w-full bg-netease-dark border border-netease-border rounded-xl px-4 py-2.5 text-white text-sm placeholder:text-netease-muted/50 focus:outline-none focus:border-netease-red/50"
                 />
