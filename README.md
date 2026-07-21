@@ -7,7 +7,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Node.js-%3E%3D18-339933?logo=node.js&logoColor=white" alt="Node.js" />
-  <img src="https://img.shields.io/badge/License-MIT-blue" alt="MIT" />
+  <img src="https://img.shields.io/badge/License-MIT%20with%20Attribution-blue" alt="MIT with Attribution" />
   <img src="https://img.shields.io/badge/Deploy-Docker%20%7C%20PM2%20%7C%20宝塔-ff6b6b" alt="Deploy" />
 </p>
 
@@ -165,4 +165,4 @@ Capacitor 远程 URL 壳，前端更新无需重打包。GitHub Actions 提供 A
 
 ## 📄 License
 
-[MIT](LICENSE)
+[MIT（附注明出处条款）](LICENSE)：可自由使用、修改、分发，但公开分发或部署时须注明出处（项目名「OpenMusic」及原始仓库链接）。
