@@ -4,6 +4,8 @@
 #   bash deploy/deploy.sh docker        # Docker 部署（自带 Redis，推荐）
 #   bash deploy/deploy.sh docker-full   # Docker 全量部署（自带 Redis + Meting）
 #   bash deploy/deploy.sh source        # 源码部署（PM2 常驻进程）
+#   bash deploy/deploy.sh update        # 更新已有部署（自动识别方式，或加参数指定）
+#   bash deploy/deploy.sh update docker|docker-full|source
 #   bash deploy/deploy.sh               # 交互式选择
 set -euo pipefail
 
@@ -50,6 +52,150 @@ resolve_compose_cmd() {
   else
     echo ""
   fi
+}
+
+# ---------- 更新（拉取最新代码） ----------
+
+# 这些路径是构建产物（依赖锁文件 / 增量编译缓存），本地跑过 install / build 后
+# 内容常与远端不同、会挡住 git pull；后续 install / build 步骤会重新生成它们，
+# 直接丢弃本地改动即可，不影响任何业务配置。
+UPDATE_SAFE_RESET_PATHS=(
+  "package-lock.json"
+  "server/package-lock.json"
+  "client/package-lock.json"
+  "client/tsconfig.tsbuildinfo"
+)
+
+update_git_pull() {
+  if ! require_cmd git; then
+    err "未检测到 git，无法自动更新（非 git 安装的部署请手动替换代码）"
+    exit 1
+  fi
+  if [ ! -d .git ]; then
+    err "当前目录不是 git 仓库，无法自动更新"
+    exit 1
+  fi
+
+  local path
+  for path in "${UPDATE_SAFE_RESET_PATHS[@]}"; do
+    if [ -f "$path" ] && ! git diff --quiet -- "$path" 2>/dev/null; then
+      info "重置本地构建产物：$path"
+      git checkout -- "$path"
+    fi
+  done
+
+  if ! git diff --quiet -- . ':!package-lock.json' ':!server/package-lock.json' ':!client/package-lock.json' ':!client/tsconfig.tsbuildinfo' \
+      || ! git diff --cached --quiet; then
+    err "检测到其他未提交的本地改动，为避免覆盖已中止更新，请先自行处理（git status 查看）："
+    git status --short
+    exit 1
+  fi
+
+  local branch
+  branch="$(git rev-parse --abbrev-ref HEAD)"
+  info "拉取最新代码（分支：$branch）..."
+  git pull origin "$branch"
+  ok "代码已更新"
+}
+
+# 尝试识别当前正在运行的部署方式；无法判断时返回空
+detect_deploy_mode() {
+  local compose_cmd
+  compose_cmd="$(resolve_compose_cmd)"
+
+  if [ -n "$compose_cmd" ] && [ -f docker-compose.full.yml ] \
+      && [ -n "$($compose_cmd -f docker-compose.full.yml ps -q meting 2>/dev/null)" ]; then
+    echo "docker-full"
+    return
+  fi
+  if [ -n "$compose_cmd" ] && [ -n "$($compose_cmd ps -q openmusic 2>/dev/null)" ]; then
+    echo "docker"
+    return
+  fi
+  if require_cmd pm2 && pm2 describe openmusic >/dev/null 2>&1; then
+    echo "source"
+    return
+  fi
+  echo ""
+}
+
+update_docker() {
+  local compose_cmd
+  compose_cmd="$(check_docker)"
+  update_git_pull
+  info "重新构建并启动容器..."
+  $compose_cmd up -d --build
+  ok "更新完成（Docker 精简版）"
+}
+
+update_docker_full() {
+  local compose_cmd
+  compose_cmd="$(check_docker)"
+  update_git_pull
+  info "重新构建并启动容器（含 Meting）..."
+  $compose_cmd -f docker-compose.full.yml up -d --build
+  ok "更新完成（Docker 全量版）"
+}
+
+update_source() {
+  check_node_version
+  if ! require_cmd npm; then
+    err "未检测到 npm"
+    exit 1
+  fi
+  update_git_pull
+
+  info "安装依赖（根 / server / client）..."
+  npm run install:all
+
+  info "构建前端..."
+  npm run build
+
+  ensure_pm2
+  info "重启 PM2 服务..."
+  if pm2 describe openmusic >/dev/null 2>&1; then
+    pm2 restart openmusic
+  else
+    pm2 start deploy/ecosystem.config.cjs
+  fi
+  pm2 save
+
+  ok "更新完成（源码部署）"
+}
+
+deploy_update() {
+  local mode="${1:-}"
+  if [ -z "$mode" ]; then
+    info "正在识别当前部署方式..."
+    mode="$(detect_deploy_mode)"
+  fi
+
+  if [ -z "$mode" ]; then
+    warn "未能自动识别当前部署方式"
+    echo "请选择要更新的部署方式："
+    echo "  1) Docker 部署"
+    echo "  2) Docker 全量部署（含 Meting）"
+    echo "  3) 源码部署（PM2）"
+    read -r -p "输入 1、2 或 3: " choice
+    case "$choice" in
+      1) mode="docker" ;;
+      2) mode="docker-full" ;;
+      3) mode="source" ;;
+      *) err "无效选择"; exit 1 ;;
+    esac
+  else
+    info "识别到当前部署方式：$mode"
+  fi
+
+  case "$mode" in
+    docker)      update_docker ;;
+    docker-full) update_docker_full ;;
+    source)      update_source ;;
+    *)
+      err "未知部署方式：$mode（可选 docker / docker-full / source）"
+      exit 1
+      ;;
+  esac
 }
 
 prepare_data_dir() {
@@ -190,16 +336,24 @@ EOF
 main() {
   print_banner
   local mode="${1:-}"
+
+  if [ "$mode" = "update" ]; then
+    deploy_update "${2:-}"
+    return
+  fi
+
   if [ -z "$mode" ]; then
     echo "请选择部署方式："
     echo "  1) Docker 部署（推荐，自带 Redis）"
     echo "  2) Docker 全量部署（自带 Redis + Meting，最省心）"
     echo "  3) 源码部署（PM2，需自行提供 Redis）"
-    read -r -p "输入 1、2 或 3: " choice
+    echo "  4) 更新已有部署"
+    read -r -p "输入 1、2、3 或 4: " choice
     case "$choice" in
       1) mode="docker" ;;
       2) mode="docker-full" ;;
       3) mode="source" ;;
+      4) deploy_update ""; return ;;
       *) err "无效选择"; exit 1 ;;
     esac
   fi
@@ -209,7 +363,7 @@ main() {
     docker-full) deploy_docker_full ;;
     source)      deploy_source ;;
     *)
-      err "未知部署方式：$mode（可选 docker / docker-full / source）"
+      err "未知部署方式：$mode（可选 docker / docker-full / source / update）"
       exit 1
       ;;
   esac
