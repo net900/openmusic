@@ -23,7 +23,7 @@ export default function ConfirmModal({
   onCancel,
 }: Props) {
   const confirmClass = confirmVariant === 'danger'
-    ? 'bg-netease-red hover:bg-red-500'
+    ? 'bg-netease-red hover:bg-netease-red/85'
     : 'bg-amber-500 hover:bg-amber-400 text-black';
 
   return createPortal(

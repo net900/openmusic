@@ -14,6 +14,8 @@
   --om-text-secondary: #a1a1aa;
   --om-text-muted: #71717a;
   --om-accent: #ff4d55;
+  --om-accent-rgb: 255 77 85;
+  --om-accent-soft: #ff8a90;
   --om-success: #32d583;
   --om-warning: #f5a524;
 }
@@ -98,7 +100,7 @@ body {
   }
 
   .text-gradient {
-    background: linear-gradient(135deg, #ff4d55, #ff8a90);
+    background: linear-gradient(135deg, var(--om-accent), var(--om-accent-soft));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -265,7 +267,7 @@ body {
     border-radius: 9999px;
     background: linear-gradient(
       to right,
-      #ec4141 var(--range-pct, 50%),
+      var(--om-accent) var(--range-pct, 50%),
       rgba(255, 255, 255, 0.12) var(--range-pct, 50%)
     );
   }
@@ -290,7 +292,7 @@ body {
   .setting-range::-moz-range-progress {
     height: 0.25rem;
     border-radius: 9999px;
-    background: #ec4141;
+    background: var(--om-accent);
   }
 
   .setting-range::-moz-range-thumb {

@@ -64,6 +64,7 @@ import JumpRequestBanner from '../components/JumpRequestBanner';
 import Toast from '../components/Toast';
 import QueueSystemToast from '../components/QueueSystemToast';
 import Tooltip from '../components/Tooltip';
+import RoomThemeColorPicker from '../components/RoomThemeColorPicker';
 import RoleBadge from '../components/RoleBadge';
 import { copyToClipboard } from '../lib/copyToClipboard';
 import { rememberRoomVisit } from '../lib/recentRooms';
@@ -1567,7 +1568,7 @@ export default function Room() {
           <button
             type="button"
             onClick={handlePasswordJoin}
-            className="w-full bg-netease-red hover:bg-red-500 text-white font-medium py-3 rounded-xl transition-colors"
+            className="w-full bg-netease-red hover:bg-netease-red/85 text-white font-medium py-3 rounded-xl transition-colors"
           >
             进入房间
           </button>
@@ -1744,7 +1745,7 @@ export default function Room() {
         type="button"
         onClick={handleSearch}
         disabled={!query.trim() || (searchMode === 'song' && searching)}
-        className="flex-shrink-0 px-3.5 sm:px-5 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl bg-netease-red text-white text-sm font-medium hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+        className="flex-shrink-0 px-3.5 sm:px-5 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl bg-netease-red text-white text-sm font-medium hover:bg-netease-red/85 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
       >
         {externalSearchButtonLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4 sm:hidden" />}
         <span className="hidden sm:inline">搜索</span>
@@ -1867,7 +1868,7 @@ export default function Room() {
         type="button"
         onClick={handleOverlaySearch}
         disabled={!overlayQuery.trim() || (overlaySearchMode === 'song' && searching)}
-        className="flex-shrink-0 px-3 py-2 rounded-xl bg-netease-red text-white text-sm font-medium hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
+        className="flex-shrink-0 px-3 py-2 rounded-xl bg-netease-red text-white text-sm font-medium hover:bg-netease-red/85 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
       >
         {overlaySearchButtonLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
         搜索
@@ -2329,6 +2330,8 @@ export default function Room() {
                   </button>
                 </Tooltip>
               )}
+
+              <RoomThemeColorPicker />
 
               <Tooltip side="bottom" content={pureMode ? '退出纯净模式（电脑端右侧滑入聊天）' : '纯净模式：隐藏动效与热榜，保留搜索与播放队列；标签页低调伪装'}>
                 <button
@@ -2911,7 +2914,7 @@ export default function Room() {
               type="button"
               onClick={() => void handleRenameRoom()}
               disabled={renameSaving || !renameDraft.trim()}
-              className="w-full flex items-center justify-center gap-2 bg-netease-red hover:bg-red-500 disabled:opacity-50 text-white font-medium py-3 rounded-xl transition-colors"
+              className="w-full flex items-center justify-center gap-2 bg-netease-red hover:bg-netease-red/85 disabled:opacity-50 text-white font-medium py-3 rounded-xl transition-colors"
             >
               {renameSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
               保存
@@ -2960,7 +2963,7 @@ export default function Room() {
                   type="button"
                   onClick={() => void handleLockRoom()}
                   disabled={lockSaving}
-                  className="w-full flex items-center justify-center gap-2 bg-netease-red hover:bg-red-500 disabled:opacity-50 text-white font-medium py-3 rounded-xl transition-colors"
+                  className="w-full flex items-center justify-center gap-2 bg-netease-red hover:bg-netease-red/85 disabled:opacity-50 text-white font-medium py-3 rounded-xl transition-colors"
                 >
                   {lockSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Lock className="w-5 h-5" />}
                   确认上锁

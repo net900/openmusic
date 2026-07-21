@@ -561,7 +561,7 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => { setError(''); setShowCreate(true); }}
-                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 sm:px-8 h-12 sm:h-14 rounded-full bg-netease-red hover:bg-red-500 text-white font-semibold shadow-lg shadow-netease-red/25 hover:shadow-netease-red/40 transition-all active:scale-95 whitespace-nowrap"
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 sm:px-8 h-12 sm:h-14 rounded-full bg-netease-red hover:bg-netease-red/85 text-white font-semibold shadow-lg shadow-netease-red/25 hover:shadow-netease-red/40 transition-all active:scale-95 whitespace-nowrap"
                 >
                   <Plus className="w-5 h-5" />
                   创建房间

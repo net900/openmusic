@@ -8,7 +8,9 @@ import { installVisibilitySync } from './lib/visibilitySync';
 import { applyPageSeo } from './lib/seo';
 import { ensureSessionBootstrap } from './lib/sessionBootstrap';
 import { warmUpSocketSession } from './hooks/useSocket';
+import { applyStoredRoomThemeColor } from './lib/roomThemeColor';
 
+applyStoredRoomThemeColor();
 installOpenMusicDebug();
 installVisibilitySync();
 applyPageSeo();

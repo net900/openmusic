@@ -5,7 +5,7 @@ export default {
     extend: {
       colors: {
         netease: {
-          red: '#ff4d55',
+          red: 'rgb(var(--om-accent-rgb) / <alpha-value>)',
           dark: '#09090b',
           card: '#18181d',
           hover: '#202026',

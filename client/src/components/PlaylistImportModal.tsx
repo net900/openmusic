@@ -247,7 +247,7 @@ export default function PlaylistImportModal({
             type="button"
             onClick={submitImport}
             disabled={!canSubmit}
-            className="px-4 py-2 rounded-xl text-sm bg-netease-red text-white hover:bg-red-500 transition-colors disabled:opacity-40 flex items-center gap-2"
+            className="px-4 py-2 rounded-xl text-sm bg-netease-red text-white hover:bg-netease-red/85 transition-colors disabled:opacity-40 flex items-center gap-2"
           >
             {loading && <Loader2 className="w-4 h-4 animate-spin" />}
             解析歌单

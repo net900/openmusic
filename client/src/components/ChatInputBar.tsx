@@ -930,7 +930,7 @@ const ChatInputBar = forwardRef<ChatInputBarHandle, Props>(function ChatInputBar
           <button
             onClick={() => { void handleSend(); }}
             disabled={sending || uploadingImage || (!hasDraft && !pendingImage) || chatMuted}
-            className="rounded-xl bg-netease-red px-3 py-1.5 text-white transition-colors hover:bg-red-500 disabled:opacity-40"
+            className="rounded-xl bg-netease-red px-3 py-1.5 text-white transition-colors hover:bg-netease-red/85 disabled:opacity-40"
             aria-label={sending || uploadingImage ? sendProgressLabel(sendProgress) || '发送中' : '发送'}
           >
             {sending || uploadingImage ? (
