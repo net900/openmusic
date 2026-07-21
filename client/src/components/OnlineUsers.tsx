@@ -4,6 +4,7 @@ import { useRoomStore } from "../stores/roomStore";
 import Modal from "./Modal";
 import { useSocket } from "../hooks/useSocket";
 import { fileToAvatarDataUrl, isSupportedAvatarFile } from "../lib/avatarImage";
+import ChatImageLightbox from "./ChatImageLightbox";
 import { formatStayDuration } from "../lib/formatStayDuration";
 import { formatDisplayLocation } from "../lib/clientNetworkInfo";
 import ConfirmModal from "./ConfirmModal";
@@ -486,12 +487,7 @@ export default function OnlineUsers({ users, creatorId, memberTiers = {}, onNoti
         />
       )}
 
-      <Modal open={previewAvatarUrl !== null} onClose={() => setPreviewAvatarUrl(null)}>
-        <div className="flex flex-col items-center gap-3">
-          <img src={previewAvatarUrl || ""} alt="头像预览" className="w-40 h-40 rounded-full object-cover border border-white/10 shadow-lg" />
-          <p className="text-xs text-netease-muted">头像预览</p>
-        </div>
-      </Modal>
+      <ChatImageLightbox imageUrl={previewAvatarUrl} onClose={() => setPreviewAvatarUrl(null)} />
 
       <Modal open={showAvatarModal} onClose={() => setShowAvatarModal(false)}>
         <h3 className="text-base font-medium text-white mb-4">设置头像</h3>
