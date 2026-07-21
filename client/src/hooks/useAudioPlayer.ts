@@ -122,7 +122,7 @@ function notifyLocalNetworkRecovery(song: QueueItem, options: { qualityDowngrade
     notifyPlaybackToast(`网络不稳定，已自动切换为「${lowestLabel}」并重试`, 'error');
     return;
   }
-  notifyPlaybackToast('网络不稳定，正在重试加载（不影响其他人）', 'error');
+  notifyPlaybackToast('网络不稳定，正在重试加载', 'error');
 }
 
 /** 播放出错/卡顿时换发新签名并续播，避免 om_ts 过期后 Range 请求 403 */

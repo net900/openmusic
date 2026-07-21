@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -106,8 +107,10 @@ function drawColorWheel(canvas: HTMLCanvasElement, value: number) {
 
 export default function RoomThemeColorPicker() {
   const rootRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [open, setOpen] = useState(false);
+  const [panelShiftX, setPanelShiftX] = useState(0);
   const [hsv, setHsv] = useState<HsvColor>(() => rgbToHsv(hexToThemeRgb(readRoomThemeColor())));
   const rgb = hsvToRgb(hsv);
   const color = themeRgbToHex(rgb);
@@ -131,6 +134,22 @@ export default function RoomThemeColorPicker() {
   useEffect(() => {
     if (!open || !canvasRef.current) return;
     drawColorWheel(canvasRef.current, 1);
+  }, [open]);
+
+  // 手机上按钮靠屏幕边缘时，右对齐弹层会伸出视口外，测量后平移回可视区域
+  useLayoutEffect(() => {
+    if (!open) {
+      setPanelShiftX(0);
+      return;
+    }
+    const panel = panelRef.current;
+    if (!panel) return;
+    const margin = 8;
+    const rect = panel.getBoundingClientRect();
+    let delta = 0;
+    if (rect.left < margin) delta = margin - rect.left;
+    else if (rect.right > window.innerWidth - margin) delta = window.innerWidth - margin - rect.right;
+    if (delta) setPanelShiftX(delta);
   }, [open]);
 
   const updateColor = (next: HsvColor) => {
@@ -198,7 +217,11 @@ export default function RoomThemeColorPicker() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-[calc(100%+8px)] z-[100] w-[calc(220px+1.5rem)] rounded-2xl border border-white/10 bg-[#18181d]/95 py-3 shadow-2xl shadow-black/50 backdrop-blur-xl">
+        <div
+          ref={panelRef}
+          className="absolute right-0 top-[calc(100%+8px)] z-[100] w-[calc(220px+1.5rem)] rounded-2xl border border-white/10 bg-[#18181d]/95 py-3 shadow-2xl shadow-black/50 backdrop-blur-xl"
+          style={panelShiftX ? { transform: `translateX(${panelShiftX}px)` } : undefined}
+        >
           <div className="mb-2 flex items-center justify-between px-3">
             <h2 className="text-sm font-medium text-white">房间主题色</h2>
             <button
