@@ -164,12 +164,8 @@ export default function QueuePanel({ fillHeight = false }: Props) {
     }
     if (res.skipped) {
       showQueueMessage('踩歌人数已满，已切歌');
-      return;
     }
-    const count = res.dislikeCount ?? 0;
-    const threshold = res.threshold ?? dislikeSkipThreshold;
-    showQueueMessage(res.disliked ? `已踩 ${count}/${threshold}` : `已取消踩 ${count}/${threshold}`);
-  }, [dislikeSkipThreshold, showQueueMessage, toggleCurrentDislike]);
+  }, [showQueueMessage, toggleCurrentDislike]);
 
   const handleBanSong = useCallback(async (song: QueueRowSong) => {
     setJumpMsg('');
