@@ -11,6 +11,7 @@ import { getUserPlaybackQuality } from './quality';
 import { resizeCoverUrl, type CoverSize } from '../../lib/coverUrl';
 import { requireSessionBootstrap } from '../../lib/sessionBootstrap';
 import { signApiUrl } from '../../lib/signedApiUrl';
+import { isBlockedPlaybackUrl, SourceUnavailableError } from '../../lib/audioPlaybackError';
 import { mergeLyricTranslations } from '../../lib/immersiveLyricLines';
 
 function getProvider(source: MusicSource) {
@@ -79,6 +80,9 @@ export async function getSongUrlInfo(
   const source = song.source || 'netease';
   const quality = qualityOverride ?? getUserPlaybackQuality(source);
   const result = await getProvider(source).getSongUrl({ ...song, source }, quality);
+  if (!result.url || isBlockedPlaybackUrl(result.url)) {
+    throw new SourceUnavailableError('no url');
+  }
   const useProxy = options?.proxy ?? shouldProxyPlaybackUrl(result.url, shouldProxySongPlaybackUrl());
   let resolved = useProxy ? toProxiedMediaUrl(result.url) : result.url;
   if (resolved.startsWith('/api/')) {

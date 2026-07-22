@@ -7,10 +7,41 @@ const URL_PROBE_TIMEOUT_MS = 5000;
 
 export const MAX_TEMP_PLAYBACK_RETRIES = 3;
 
+/** QQ 音乐偶发返回的占位直链，不可播放 */
+const BLOCKED_PLAYBACK_HOSTS = new Set([
+  'aqqmusic.tc.qq.com',
+]);
+
+export function isBlockedPlaybackUrl(url: string | undefined | null): boolean {
+  if (!url?.trim()) return false;
+  try {
+    const parsed = new URL(url.trim(), typeof window !== 'undefined' ? window.location.href : 'https://localhost');
+    return BLOCKED_PLAYBACK_HOSTS.has(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/** Meting / 曲库上游明确表示无可用播放地址 */
+export function isSourceUnavailableMessage(message: string | undefined | null): boolean {
+  const normalized = String(message || '').trim().toLowerCase();
+  return normalized === 'no url'
+    || normalized === 'empty url'
+    || normalized === 'blocked playback url';
+}
+
+export class SourceUnavailableError extends Error {
+  constructor(message = 'no url') {
+    super(message);
+    this.name = 'SourceUnavailableError';
+  }
+}
+
 function isInvalidPlaybackUrl(url: string | undefined | null): boolean {
   if (!url) return true;
   const trimmed = url.trim();
   if (!trimmed) return true;
+  if (isBlockedPlaybackUrl(trimmed)) return true;
   try {
     const parsed = new URL(trimmed, window.location.href);
     return !parsed.protocol.startsWith('http');
@@ -60,6 +91,8 @@ export function classifySongUrlFetchFailure(url: string | null | undefined): Pla
 }
 
 export function classifySongUrlFetchError(error: unknown): PlaybackErrorClass {
+  if (error instanceof SourceUnavailableError) return 'service';
+  if (error instanceof Error && isSourceUnavailableMessage(error.message)) return 'service';
   if (error instanceof TypeError) return 'temporary';
   if (error instanceof DOMException) {
     if (error.name === 'AbortError' || error.name === 'TimeoutError') return 'temporary';

@@ -8,6 +8,7 @@ import {
 import {
   classifySongUrlFetchError,
   classifySongUrlFetchFailure,
+  isBlockedPlaybackUrl,
   type PlaybackErrorClass,
 } from './audioPlaybackError';
 import {
@@ -205,7 +206,7 @@ async function fetchCrossSourceFallback(song: QueueItem): Promise<string | null>
       try {
         const quality = getLowestQuality(candidate.source) ?? getUserPlaybackQuality(candidate.source);
         const info = await getSongUrlInfo(candidate, quality);
-        if (!info.url) continue;
+        if (!info.url || isBlockedPlaybackUrl(info.url)) continue;
         urlCache.set(urlCacheKey(song, getEffectivePlaybackQuality(song)), {
           url: info.url,
           qualityLabel: info.qualityLabel,
@@ -317,6 +318,9 @@ async function fetchSongUrlOnce(
       if (/music\.163\.com\/song\/media\/outer\/url/i.test(cached.url)) {
         urlCache.delete(key);
         persistUrlCacheToStorage();
+      } else if (isBlockedPlaybackUrl(cached.url)) {
+        urlCache.delete(key);
+        persistUrlCacheToStorage();
       } else if (
         !cached.qualityLabel
         && songSourceOf(song) !== 'kugou'
@@ -350,7 +354,7 @@ async function fetchSongUrlOnce(
         return { ok: false, errorClass: classifySongUrlFetchError(error) };
       }
 
-      if (!url) {
+      if (!url || isBlockedPlaybackUrl(url)) {
         return { ok: false, errorClass: classifySongUrlFetchFailure(url) };
       }
 

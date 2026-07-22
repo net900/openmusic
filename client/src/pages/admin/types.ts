@@ -133,6 +133,7 @@ export interface SiteBanEntry {
 
 export interface ErrorReportSummary {
   id: string;
+  type: 'error' | 'feedback';
   status: 'open' | 'resolved';
   description: string;
   ip: string;
@@ -149,11 +150,19 @@ export interface ErrorReportSummary {
     href?: string | null;
   };
   eventCount: number;
+  snapshotCount?: number;
   hasSnapshot: boolean;
+}
+
+export interface ErrorReportSnapshotSection {
+  id: string;
+  title: string;
+  content: string;
 }
 
 export interface ErrorReportDetail extends ErrorReportSummary {
   snapshot: string;
+  snapshots?: ErrorReportSnapshotSection[];
   events: { at: string; name: string; line: string }[];
   meta: Record<string, string | number | boolean | null>;
 }

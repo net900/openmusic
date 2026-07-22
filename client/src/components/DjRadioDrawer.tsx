@@ -2,9 +2,7 @@ import { useEffect } from 'react';
 import { Radio, X } from 'lucide-react';
 import type { DjRadioItem } from '../api/music/djRadio';
 import DjRadioPanel from './DjRadioPanel';
-import { immersiveGlassDrawer, immersiveGlassScrim, immersiveGlassSheetHeader } from '../lib/immersiveGlass';
-
-const PANEL_WIDTH = 360;
+import { immersiveGlassModal, immersiveGlassScrim, immersiveGlassSheetHeader } from '../lib/immersiveGlass';
 
 interface Props {
   open: boolean;
@@ -31,20 +29,19 @@ export default function DjRadioDrawer({ open, immersive = false, onClose, onSele
   };
 
   return (
-    <div className={`fixed inset-0 z-[90] ${immersive ? '' : 'hidden lg:block'}`}>
+    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
       <button
         type="button"
-        className={`absolute inset-0 ${immersive ? immersiveGlassScrim : 'bg-black/50 backdrop-blur-[1px]'}`}
+        className={`absolute inset-0 ${immersive ? immersiveGlassScrim : 'bg-black/65 backdrop-blur-sm'}`}
         onClick={onClose}
         aria-label="关闭音乐电台"
       />
-      <aside
-        className={`absolute left-3 flex flex-col overflow-hidden shadow-2xl animate-fade-in ${
+      <div
+        className={`relative z-10 flex min-h-0 max-h-[min(80vh,720px)] w-full max-w-2xl flex-col overflow-hidden shadow-2xl animate-fade-in ${
           immersive
-            ? `${immersiveGlassDrawer} top-3 bottom-3 rounded-[22px]`
-            : 'top-[calc(3.5rem+env(safe-area-inset-top,0px))] bottom-[calc(5.25rem+env(safe-area-inset-bottom,0px))] rounded-3xl border border-netease-border/50 bg-[#101012]/95 backdrop-blur-xl'
+            ? immersiveGlassModal
+            : 'rounded-2xl border border-white/10 glass'
         }`}
-        style={{ width: PANEL_WIDTH, maxWidth: 'min(calc(100vw - 1.5rem), 360px)' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className={`flex flex-shrink-0 items-center justify-between gap-2 px-4 py-3 ${immersive ? immersiveGlassSheetHeader : 'border-b border-netease-border/40'}`}>
@@ -61,10 +58,10 @@ export default function DjRadioDrawer({ open, immersive = false, onClose, onSele
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <DjRadioPanel hideHeader immersive={immersive} onSelectRadio={handleSelect} />
         </div>
-      </aside>
+      </div>
     </div>
   );
 }

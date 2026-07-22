@@ -1952,7 +1952,7 @@ export function postJoinNoticeMessage(roomId, userId) {
 
   room.lastJoinNoticeAt.set(userId, now);
   const nickname = formatActorName(user);
-  const message = appendSystemChatMessage(room, `${nickname}进入房间`);
+  const message = appendSystemChatMessage(room, `${nickname} 进入房间`);
   return message ? { ...message, kind: "notice" } : null;
 }
 

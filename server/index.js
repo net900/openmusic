@@ -1245,8 +1245,10 @@ app.post('/api/error-reports', async (req, res) => {
   }
 
   const result = await createErrorReport({
+    type: req.body?.type,
     description: req.body?.description,
     snapshot: req.body?.snapshot,
+    snapshots: req.body?.snapshots,
     events: req.body?.events,
     meta: req.body?.meta,
     ip,

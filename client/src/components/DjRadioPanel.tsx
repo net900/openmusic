@@ -84,7 +84,7 @@ function RadioCard({
 
 function RadioSkeleton() {
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="grid grid-cols-4 gap-2">
       {Array.from({ length: 8 }, (_, i) => (
         <div key={i} className="flex flex-col items-center">
           <div className="aspect-square w-full rounded-2xl skeleton-shimmer" />
@@ -168,7 +168,7 @@ export default function DjRadioPanel({
   const list = searchResults ?? (tab === 'hot' ? hot : recommend);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className={`flex min-h-0 flex-col overflow-hidden ${hideHeader ? 'h-full flex-1' : 'h-full'}`}>
       {!hideHeader && (
         <div className="mb-2 flex items-center gap-2 px-1">
           <Radio className="h-4 w-4 text-rose-400" />
@@ -235,7 +235,7 @@ export default function DjRadioPanel({
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-4">
         {loading || searching ? (
           <RadioSkeleton />
         ) : list.length === 0 ? (
@@ -247,7 +247,7 @@ export default function DjRadioPanel({
             {error && list.length > 0 && (
               <p className="mb-2 text-center text-[11px] text-amber-300/80">{error}</p>
             )}
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               {list.map((radio) => (
                 <RadioCard
                   key={radio.id}

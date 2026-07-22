@@ -1,6 +1,7 @@
 import type { MusicProvider, SearchResult } from '../types';
 import type { MusicSource } from '../../../types';
 import { fetchWithTimeout } from '../../http';
+import { isSourceUnavailableMessage, SourceUnavailableError } from '../../../lib/audioPlaybackError';
 
 const API_BASE = '/api/meting';
 
@@ -59,6 +60,26 @@ function isDirectPlayableUrl(url?: string): boolean {
 function normalizeMetingTextUrl(raw: string): string {
   const text = raw.trim();
   return text.startsWith('@') ? text.slice(1).trim() : text;
+}
+
+function parseMetingErrorMessage(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('{')) {
+    try {
+      const data = JSON.parse(trimmed) as { error?: unknown };
+      if (typeof data.error === 'string') return data.error.trim();
+    } catch {
+      // fall through
+    }
+  }
+  return trimmed;
+}
+
+function throwIfSourceUnavailable(message: string): void {
+  if (isSourceUnavailableMessage(message)) {
+    throw new SourceUnavailableError(message);
+  }
 }
 
 async function metingFetch<T>(server: MusicSource, params: Record<string, string>): Promise<T> {
@@ -147,23 +168,30 @@ function createMetingProvider(
         const location = normalizeMetingTextUrl(res.headers.get('Location') || res.headers.get('location') || '');
         if (isDirectPlayableUrl(location)) return { url: location };
       }
-      if (!res.ok) throw new Error('API 请求失败');
       const text = (await res.text()).trim();
+      if (!res.ok) {
+        const errMsg = parseMetingErrorMessage(text);
+        throwIfSourceUnavailable(errMsg);
+        throw new Error(errMsg || 'API 请求失败');
+      }
       if (text.startsWith('{')) {
         try {
-          const data = JSON.parse(text) as { url?: unknown; quality?: unknown };
+          const data = JSON.parse(text) as { url?: unknown; quality?: unknown; error?: unknown };
+          const errMsg = typeof data.error === 'string' ? data.error.trim() : '';
+          throwIfSourceUnavailable(errMsg);
           const url = normalizeMetingTextUrl(String(data.url || ''));
           if (isDirectPlayableUrl(url)) {
             const qualityLabel = String(data.quality || '').trim() || undefined;
             return { url, qualityLabel };
           }
-        } catch {
+        } catch (error) {
+          if (error instanceof SourceUnavailableError) throw error;
           // fall through
         }
       }
       const url = normalizeMetingTextUrl(text);
       if (isDirectPlayableUrl(url)) return { url };
-      throw new Error('empty url');
+      throw new SourceUnavailableError('no url');
     },
     async getLyrics(song) {
       if (song.lrc?.startsWith('[')) return song.lrc;

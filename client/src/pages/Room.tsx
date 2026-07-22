@@ -213,6 +213,8 @@ interface PlaylistSearchBackup {
   pageSize: SongResultPageSize;
 }
 
+type SearchDetailOrigin = 'radio' | 'recommend-playlist';
+
 
 export default function Room() {
 
@@ -309,6 +311,8 @@ export default function Room() {
   const [djRadioDrawerOpen, setDjRadioDrawerOpen] = useState(false);
   const [downloadModalOpen, setDownloadModalOpen] = useState(false);
   const [isPlaylistResults, setIsPlaylistResults] = useState(false);
+  const [isRadioResults, setIsRadioResults] = useState(false);
+  const [searchDetailOrigin, setSearchDetailOrigin] = useState<SearchDetailOrigin | null>(null);
   const [playlistSearchResults, setPlaylistSearchResults] = useState<PlaylistSearchItem[]>([]);
   const [playlistSearchPage, setPlaylistSearchPage] = useState(1);
   const [playlistSearchPageSize, setPlaylistSearchPageSize] = useState<SongResultPageSize>(getStoredSongResultPageSize);
@@ -847,12 +851,12 @@ export default function Room() {
   }, [sources, searchFilterMode]);
 
   const handleSearchFilterChange = useCallback((next: SearchFilterMode) => {
-    if (isPlaylistResults) return;
+    if (isPlaylistResults || isRadioResults) return;
     setSearchFilterMode(next);
     if (searchedKeyword.trim()) {
       doSearch(searchedKeyword, next);
     }
-  }, [isPlaylistResults, searchedKeyword, doSearch]);
+  }, [isPlaylistResults, isRadioResults, searchedKeyword, doSearch]);
 
   const doPlaylistSearch = useCallback(async (
     keyword: string,
@@ -902,7 +906,11 @@ export default function Room() {
     }
   }, [searchedKeyword, activeSearchMode, doPlaylistSearch]);
 
-  const handlePlaylistImport = useCallback(async (platform: PlaylistPlatform, input: string) => {
+  const handlePlaylistImport = useCallback(async (
+    platform: PlaylistPlatform,
+    input: string,
+    options?: { deferOverlay?: boolean },
+  ) => {
     setPlaylistImportOpen(false);
     if (activeSearchMode === 'playlist' && searchedKeyword.trim() && playlistSearchResults.length > 0) {
       setPlaylistSearchBackup({
@@ -914,23 +922,41 @@ export default function Room() {
         pageSize: playlistSearchPageSize,
       });
     }
-    setSearching(true);
-    setIsPlaylistResults(true);
-    if (!isLgUp) {
-      setSearchMode('song');
+    const deferOverlay = options?.deferOverlay ?? false;
+
+    if (!deferOverlay) {
+      setSearching(true);
+      setIsPlaylistResults(true);
+      setIsRadioResults(false);
+      if (!isLgUp) {
+        setSearchMode('song');
+      }
+      setActiveSearchMode('song');
+      setOverlaySearchMode('song');
+      setPlaylistSearchResults([]);
+      setPlaylistSearchTotal(0);
+      setSearchedKeyword(`正在解析${platform === 'netease' ? '红点' : '绿点'}歌单…`);
+      setResults([]);
     }
-    setActiveSearchMode('song');
-    setOverlaySearchMode('song');
-    setPlaylistSearchResults([]);
-    setPlaylistSearchTotal(0);
-    setSearchedKeyword(`正在解析${platform === 'netease' ? '红点' : '绿点'}歌单…`);
-    setResults([]);
 
     try {
       const result = await importPlaylist(platform, input);
       if (result.playlistId) {
         rememberPlaylistImportHistory({ platform, playlistId: result.playlistId, name: result.name });
       }
+
+      if (deferOverlay) {
+        if (!isLgUp) {
+          setSearchMode('song');
+        }
+        setIsPlaylistResults(true);
+        setIsRadioResults(false);
+        setActiveSearchMode('song');
+        setOverlaySearchMode('song');
+        setPlaylistSearchResults([]);
+        setPlaylistSearchTotal(0);
+      }
+
       setResults(result.songs);
       setSearchedKeyword(`歌单：${result.name}`);
 
@@ -945,14 +971,19 @@ export default function Room() {
       setResults([]);
       setSearchedKeyword('');
       setIsPlaylistResults(false);
+      setIsRadioResults(false);
+      setSearchDetailOrigin(null);
       showToast(err instanceof Error ? err.message : '歌单解析失败', 'error');
     } finally {
-      setSearching(false);
+      if (!deferOverlay) {
+        setSearching(false);
+      }
     }
   }, [showToast, activeSearchMode, searchedKeyword, playlistSearchResults, playlistSearchPage, playlistSearchTotal, playlistChannelFilter, playlistSearchPageSize, isLgUp]);
 
   const handleRecommendPlaylistSelect = useCallback(async (playlist: PlaylistSearchItem) => {
-    await handlePlaylistImport(playlist.platform, playlist.id);
+    setSearchDetailOrigin('recommend-playlist');
+    await handlePlaylistImport(playlist.platform, playlist.id, { deferOverlay: true });
   }, [handlePlaylistImport]);
 
   const handleDjRadioSelect = useCallback(async (radio: DjRadioItem) => {
@@ -966,20 +997,19 @@ export default function Room() {
         pageSize: playlistSearchPageSize,
       });
     }
-    setSearching(true);
-    setIsPlaylistResults(true);
-    if (!isLgUp) {
-      setSearchMode('song');
-    }
-    setActiveSearchMode('song');
-    setOverlaySearchMode('song');
-    setPlaylistSearchResults([]);
-    setPlaylistSearchTotal(0);
-    setSearchedKeyword(`正在加载电台：${radio.name}…`);
-    setResults([]);
 
     try {
       const result = await fetchDjPrograms(radio.id);
+      if (!isLgUp) {
+        setSearchMode('song');
+      }
+      setIsRadioResults(true);
+      setIsPlaylistResults(false);
+      setSearchDetailOrigin('radio');
+      setActiveSearchMode('song');
+      setOverlaySearchMode('song');
+      setPlaylistSearchResults([]);
+      setPlaylistSearchTotal(0);
       setResults(result.songs);
       setSearchedKeyword(`电台：${result.name || radio.name}`);
 
@@ -991,10 +1021,9 @@ export default function Room() {
     } catch (err) {
       setResults([]);
       setSearchedKeyword('');
-      setIsPlaylistResults(false);
+      setIsRadioResults(false);
+      setSearchDetailOrigin(null);
       showToast(err instanceof Error ? err.message : '电台加载失败', 'error');
-    } finally {
-      setSearching(false);
     }
   }, [
     showToast,
@@ -1130,6 +1159,8 @@ export default function Room() {
     setPlaylistSearchLoading(false);
     setSearchedKeyword('');
     setIsPlaylistResults(false);
+    setIsRadioResults(false);
+    setSearchDetailOrigin(null);
     setListPageSongs([]);
     setPlaylistSearchBackup(null);
     setActiveSearchMode('song');
@@ -1142,6 +1173,8 @@ export default function Room() {
       return;
     }
     setIsPlaylistResults(false);
+    setIsRadioResults(false);
+    setSearchDetailOrigin(null);
     setResults([]);
     setActiveSearchMode('playlist');
     setOverlaySearchMode('playlist');
@@ -1158,6 +1191,38 @@ export default function Room() {
     setPlaylistSearchPageSize(playlistSearchBackup.pageSize);
     setListPageSongs([]);
   }, [playlistSearchBackup, clearSearchResults, isLgUp]);
+
+  const handleBackFromDetail = useCallback(() => {
+    if (searchDetailOrigin === 'radio') {
+      setIsRadioResults(false);
+      setResults([]);
+      setSearchedKeyword('');
+      setSearching(false);
+      setSearchDetailOrigin(null);
+      setListPageSongs([]);
+      setActiveSearchMode('song');
+      setOverlaySearchMode('song');
+      setDjRadioDrawerOpen(true);
+      return;
+    }
+    if (searchDetailOrigin === 'recommend-playlist') {
+      setIsPlaylistResults(false);
+      setResults([]);
+      setSearchedKeyword('');
+      setSearching(false);
+      setSearchDetailOrigin(null);
+      setListPageSongs([]);
+      setActiveSearchMode('song');
+      setOverlaySearchMode('song');
+      setRecommendDrawerOpen(true);
+      return;
+    }
+    if (isPlaylistResults && playlistSearchBackup) {
+      handleBackToPlaylistSearch();
+    } else {
+      clearSearchResults();
+    }
+  }, [searchDetailOrigin, isPlaylistResults, playlistSearchBackup, handleBackToPlaylistSearch, clearSearchResults]);
 
   const handleAdd = useCallback(async (song: SearchResult) => {
     if (songRequestBlockReason) {
@@ -1793,6 +1858,16 @@ export default function Room() {
   const qqImportEnabled = sources.some((s) => s.id === 'tencent' && s.supportsSearch);
   const queueCount = (room.current ? 1 : 0) + room.queue.length;
   const showDesktopSearchOverlay = Boolean(searchedKeyword || searching || playlistSearchLoading);
+  const isCuratedDetailView = isPlaylistResults || isRadioResults;
+  const canBackFromDetail = isRadioResults
+    || searchDetailOrigin === 'recommend-playlist'
+    || (isPlaylistResults && Boolean(playlistSearchBackup));
+  const searchOverlayTitle = isRadioResults ? '电台详情' : isPlaylistResults ? '歌单详情' : '搜索结果';
+  const searchBackLabel = isRadioResults
+    ? '返回电台'
+    : searchDetailOrigin === 'recommend-playlist'
+      ? '返回热榜'
+      : '返回歌单';
   const showPlaylistSearch = activeSearchMode === 'playlist' && Boolean(searchedKeyword || playlistSearchLoading);
   const hasPlaylistSearchResults = showPlaylistSearch && playlistSearchResults.length > 0;
   const showPlaylistEmpty = showPlaylistSearch && !playlistSearchLoading && playlistSearchResults.length === 0;
@@ -1813,12 +1888,18 @@ export default function Room() {
       return `正在搜索歌单「${searchedKeyword}」...`;
     }
     if (searching) {
+      if (isRadioResults) return searchedKeyword;
       return isPlaylistResults ? searchedKeyword : `正在搜索「${searchedKeyword}」...`;
     }
     if (hasPlaylistSearchResults) return `找到 ${playlistSearchTotal || playlistSearchResults.length} 个相关歌单`; 
     if (results.length === 0) {
       if (showPlaylistSearch) return '没有找到相关歌单';
+      if (isRadioResults) return '电台暂无可用节目';
       return isPlaylistResults ? '歌单为空或链接无效' : `「${searchedKeyword}」无相关结果`;
+    }
+    if (isRadioResults) {
+      const name = searchedKeyword.replace(/^电台：/, '');
+      return `「${name}」共 ${results.length} 首，请自选点歌`;
     }
     if (isPlaylistResults) {
       const name = searchedKeyword.replace(/^歌单：/, '');
@@ -2115,12 +2196,24 @@ export default function Room() {
   const renderSearchResultsCore = (fillHeight = true, immersiveGlass = false) => (
     <div className={`flex min-h-0 flex-col ${fillHeight ? 'h-full flex-1' : ''}`}>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
-        <p className="min-w-0 truncate text-xs text-white/55">{renderResultsSummary()}</p>
+        <div className="flex min-w-0 items-center gap-2">
+          {canBackFromDetail && (
+            <button
+              type="button"
+              onClick={handleBackFromDetail}
+              className="flex flex-shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-white/55 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              {searchBackLabel}
+            </button>
+          )}
+          <p className="min-w-0 truncate text-xs text-white/55">{renderResultsSummary()}</p>
+        </div>
         <div className="flex flex-shrink-0 items-center gap-2">
           {showPlaylistSearch && (
             <PlaylistChannelFilter value={playlistChannelFilter} onChange={handlePlaylistChannelChange} />
           )}
-          {!searching && searchableCount > 0 && !isPlaylistResults && activeSearchMode === 'song' && (
+          {!searching && searchableCount > 0 && !isCuratedDetailView && activeSearchMode === 'song' && (
             <SearchFilterSelect value={searchFilterMode} onChange={handleSearchFilterChange} />
           )}
           {showSongListResults && renderBulkAddPageButton('px-2.5 py-1.5')}
@@ -2140,7 +2233,7 @@ export default function Room() {
         )}
         {!searching && !playlistSearchLoading && searchedKeyword && !hasPlaylistSearchResults && results.length === 0 && (
           <p className="animate-fade-in py-10 text-center text-white/45">
-            {showPlaylistEmpty ? '没有找到相关歌单' : isPlaylistResults ? '歌单为空或链接无效' : '换个关键词试试'}
+            {showPlaylistEmpty ? '没有找到相关歌单' : isRadioResults ? '电台暂无可用节目' : isPlaylistResults ? '歌单为空或链接无效' : '换个关键词试试'}
           </p>
         )}
         {hasPlaylistSearchResults && renderPlaylistSearchList(true, immersiveGlass)}
@@ -2198,8 +2291,12 @@ export default function Room() {
               setImmersiveExitPromptOpen(true);
             }}
             onPanelFocusChange={setImmersivePanelFocus}
-            searchBar={immersiveSearchBar}
-            searchExtras={immersiveSearchExtras}
+            searchBar={
+              showDesktopSearchOverlay && isCuratedDetailView ? null : immersiveSearchBar
+            }
+            searchExtras={
+              showDesktopSearchOverlay && isCuratedDetailView ? null : immersiveSearchExtras
+            }
             showSearchResults={showDesktopSearchOverlay}
             searchResults={
               showDesktopSearchOverlay ? (
@@ -2644,14 +2741,14 @@ export default function Room() {
                   <button
                     type="button"
                     onClick={() => setRecommendDrawerOpen(true)}
-                    className="hidden lg:inline-flex rounded-lg px-2 py-1 text-[11px] sm:text-xs text-white/75 hover:bg-white/10 hover:text-white transition-colors whitespace-nowrap"
+                    className="rounded-lg px-2 py-1 text-[11px] sm:text-xs text-white/75 hover:bg-white/10 hover:text-white transition-colors whitespace-nowrap"
                   >
                     热榜歌单
                   </button>
                   <button
                     type="button"
                     onClick={() => setDjRadioDrawerOpen(true)}
-                    className="hidden lg:inline-flex rounded-lg px-2 py-1 text-[11px] sm:text-xs text-white/75 hover:bg-white/10 hover:text-white transition-colors whitespace-nowrap"
+                    className="rounded-lg px-2 py-1 text-[11px] sm:text-xs text-white/75 hover:bg-white/10 hover:text-white transition-colors whitespace-nowrap"
                   >
                     音乐电台
                   </button>
@@ -2725,18 +2822,18 @@ export default function Room() {
           >
             <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-netease-border/50 flex-shrink-0">
               <div className="min-w-0 flex items-center gap-2">
-                {isPlaylistResults && playlistSearchBackup && (
+                {canBackFromDetail && (
                   <button
                     type="button"
-                    onClick={handleBackToPlaylistSearch}
+                    onClick={handleBackFromDetail}
                     className="flex flex-shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-netease-muted hover:bg-white/10 hover:text-white transition-colors"
                   >
                     <ChevronLeft className="w-4 h-4" />
-                    返回歌单
+                    {searchBackLabel}
                   </button>
                 )}
                 <div className="min-w-0">
-                  <h2 className="text-sm font-medium text-white">{isPlaylistResults ? '歌单详情' : '搜索结果'}</h2>
+                  <h2 className="text-sm font-medium text-white">{searchOverlayTitle}</h2>
                   <p className="text-xs text-netease-muted mt-0.5 truncate">
                     {renderResultsSummary()}
                   </p>
@@ -2746,7 +2843,7 @@ export default function Room() {
                 {showPlaylistSearch && (
                   <PlaylistChannelFilter value={playlistChannelFilter} onChange={handlePlaylistChannelChange} />
                 )}
-                {!searching && searchableCount > 0 && !isPlaylistResults && (
+                {!searching && searchableCount > 0 && !isCuratedDetailView && (
                   activeSearchMode === 'song' && <SearchFilterSelect value={searchFilterMode} onChange={handleSearchFilterChange} />
                 )}
                 {showSongListResults && renderBulkAddPageButton('px-2.5 py-1.5')}
@@ -2760,17 +2857,19 @@ export default function Room() {
                 </button>
               </div>
             </div>
+            {!isCuratedDetailView && (
             <div className="flex-shrink-0 px-3 pt-3">
               {overlaySearchBar}
             </div>
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3 pt-2">
+            )}
+            <div className={`flex min-h-0 flex-1 flex-col overflow-hidden p-3 ${isCuratedDetailView ? 'pt-3' : 'pt-2'}`}>
               {searching && searchedKeyword && !showPlaylistSearch && <SearchSkeleton fillHeight />}
               {showPlaylistSkeleton && (
                 <SearchSkeleton fillHeight count={playlistSearchPageSize} showPaginationFooter={false} />
               )}
               {!searching && !playlistSearchLoading && searchedKeyword && !hasPlaylistSearchResults && results.length === 0 && (
                 <p className="text-center text-netease-muted py-10 animate-fade-in">
-                  {showPlaylistEmpty ? '没有找到相关歌单' : (isPlaylistResults ? '歌单为空或链接无效' : '换个关键词试试')}
+                  {showPlaylistEmpty ? '没有找到相关歌单' : isRadioResults ? '电台暂无可用节目' : isPlaylistResults ? '歌单为空或链接无效' : '换个关键词试试'}
                 </p>
               )}
               {hasPlaylistSearchResults && renderPlaylistSearchList(true)}
