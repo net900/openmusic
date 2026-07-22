@@ -5,7 +5,7 @@ import {
   Loader2, RefreshCw, Plus, X, Disc3, Sparkles, Github, History, Download, Smartphone,
   Play, Activity, Search
 } from 'lucide-react';
-import { createRoom, checkRoom, listRooms, getCoverUrl } from '../api/meting';
+import { createRoom, checkRoom, listRooms } from '../api/meting';
 import { useRoomStore } from '../stores/roomStore';
 import { useSocket } from '../hooks/useSocket';
 import type { RoomSummary } from '../types';
@@ -16,6 +16,7 @@ import { areRoomListsEqual, isLobbyHardLocked, sortLobbyRooms } from '../lib/roo
 import { isMobileDevice } from '../lib/audioUnlock';
 import { ANDROID_APK_URL } from '../lib/androidDownload';
 import { IOS_IPA_URL } from '../lib/iosDownload';
+import { resizeCoverUrl } from '../lib/coverUrl';
 import {
   fetchSiteAnnouncement,
   markSiteAnnouncementSeen,
@@ -26,6 +27,19 @@ import Tooltip from '../components/Tooltip';
 import ClientDownloadModal from '../components/ClientDownloadModal';
 import SiteAnnouncementPopup from '../components/SiteAnnouncementPopup';
 import BrandMark from '../components/BrandMark';
+
+/** 大厅只用接口带回的 CDN 直链，不走 meting type=pic 再查 */
+function lobbyDirectCoverUrl(pic?: string): string | null {
+  const raw = String(pic || '').trim();
+  if (!/^https?:\/\//i.test(raw)) return null;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.searchParams.get('type') === 'pic') return null;
+  } catch {
+    return null;
+  }
+  return resizeCoverUrl(raw, 'thumb');
+}
 
 function GiteeIcon({ className }: { className?: string }) {
   return (
@@ -104,10 +118,7 @@ const RoomCard = memo(function RoomCard({
   const isActive = room.isPlaying && room.currentSong;
   const hardLocked = isLobbyHardLocked(room);
   const gradient = gradientForId(room.id);
-  const currentSong = room.currentSong;
-  const coverUrl = currentSong?.id && currentSong?.source
-    ? getCoverUrl({ id: currentSong.id, source: currentSong.source, pic: currentSong.pic }, 'thumb')
-    : null;
+  const coverUrl = lobbyDirectCoverUrl(room.currentSong?.pic);
 
   const cardRef = useRef<HTMLDivElement | HTMLButtonElement | null>(null);
   const frameRef = useRef<number | null>(null);
@@ -197,11 +208,13 @@ const RoomCard = memo(function RoomCard({
                   src={coverUrl}
                   alt=""
                   loading="lazy"
+                  decoding="async"
+                  referrerPolicy="no-referrer"
                   className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
                   onError={(e) => { e.currentTarget.style.display = 'none'; }}
                 />
               )}
-              {coverUrl && <div className="absolute inset-0 bg-black/20" />}
+              {coverUrl && <div className="absolute inset-0 bg-black/20 pointer-events-none" />}
               {isActive && !hardLocked ? (
                 <EqualizerBars className="relative text-white drop-shadow-md scale-110" />
               ) : !coverUrl ? (
