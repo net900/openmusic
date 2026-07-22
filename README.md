@@ -52,7 +52,7 @@
 
 ```bash
 # 下载 compose 文件，直接拉镜像运行（无需克隆源码）
-curl -O https://raw.githubusercontent.com/wqqqqqq200/openmusic/main/docker-compose.full.yml
+curl -O https://raw.githubusercontent.com/qq01-hub/openmusic/main/docker-compose.full.yml
 mkdir -p data/downloads && touch data/.env data/setup.lock && echo '{}' > data/runtimeConfig.json && echo '{}' > data/adminConfig.json
 docker compose -f docker-compose.full.yml up -d
 ```
@@ -65,7 +65,7 @@ docker compose -f docker-compose.full.yml up -d
 ### 源码部署
 
 ```bash
-git clone https://github.com/wqqqqqq200/openmusic.git && cd openmusic
+git clone https://github.com/qq01-hub/openmusic.git && cd openmusic
 npm run install:all && npm run build && npm start
 ```
 
