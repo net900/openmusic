@@ -119,7 +119,6 @@ import {
   isCyapiConfigured,
   searchKugouMusic,
   getKugouSongDetail,
-  moderateCyapiImage,
 } from './cyapi.js';
 import { importNeteasePlaylist, importQqPlaylist, fetchNeteasePlaylistMetas } from './playlistImport.js';
 import { fetchNeteaseHotToplist } from './neteaseToplist.js';
@@ -128,7 +127,6 @@ import {
   createChatImageUploadToken,
   isQiniuConfigured,
 } from './qiniuOss.js';
-import { isLocalStickerImageKey } from './localSticker.js';
 import {
   isApihzStickerConfigured,
   searchApihzStickers,
@@ -2747,15 +2745,6 @@ io.on('connection', (socket) => {
       const sensitive = await checkApihzSensitiveWords(textContent);
       if (!sensitive.ok) {
         callback?.({ success: false, error: sensitive.error });
-        return;
-      }
-    }
-
-    const imageContent = String(imageUrl || '').trim();
-    if (imageContent && !isLocalStickerImageKey(imageKey)) {
-      const imageModeration = await moderateCyapiImage(imageContent);
-      if (!imageModeration.ok) {
-        callback?.({ success: false, error: imageModeration.error });
         return;
       }
     }
